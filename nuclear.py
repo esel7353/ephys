@@ -13,17 +13,16 @@ MeV = sc.mega * eV
 
 def bindingEnergy(A, Z):
   """
-  The binding energy of a nucleus. The formula is known as the 'Bethe Weizsäcker mass
-  formula'. The binding energy is defined as the energy which is freed when the nucleus
-  is formed from independent nucleons. Therefore the binding energy of seperate
-  nucleons is null.
-  Used constants might be subject to change.
-
+  The binding energy of a nucleus. The formula is known as the 'Bethe
+  Weizsäcker mass formula'. The binding energy is defined as the energy
+  which is freed when the nucleus is formed from independent nucleons.
+  Therefore the binding energy of seperate nucleons is null.  Used constants
+  might be subject to change.  
   Parameter:
     A - number of nucleons, i.e number of protons and neutrons
     Z - number of protons
-    The parameters might be numpy arrays or scalars. If both are numpy arrays, they
-    are required to have the same shape.
+    The parameters might be numpy arrays or scalars. If both are numpy
+    arrays, they are required to have the same shape.
 
   Return:
     binding Energy in Joule
