@@ -16,11 +16,13 @@ def bindingEnergy(A, Z):
   The binding energy of a nucleus. The formula is known as the 'Bethe
   Weizsäcker mass formula'. The binding energy is defined as the energy
   which is freed when the nucleus is formed from independent nucleons.
-  Therefore the binding energy of seperate nucleons is null.  Used constants
-  might be subject to change.  
+  Therefore the binding energy is positive and for separate nucleons it is null.
+  Used constants might be subject to change.
+
   Parameter:
     A - number of nucleons, i.e number of protons and neutrons
     Z - number of protons
+
     The parameters might be numpy arrays or scalars. If both are numpy
     arrays, they are required to have the same shape.
 
@@ -50,18 +52,13 @@ def bindingEnergy(A, Z):
   return a_V * A - a_S * np.power(A, 2/3) - a_F * np.square(N-Z) / A - a_C * np.square(Z) * np.power(A, -1/3) + delta * a_P / np.sqrt(A)
   
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   import pylab
-
-  A = np.array(range(3, 250))
-
-  Z = np.round(A / 2.5)
-
-  pylab.plot(A, bindingEnergy(A,Z)/A/MeV)
-  pylab.xlabel("Massenzahl $A$")
-  pylab.ylabel("Bindungsernergie pro Nukleon $E/A \\, / \\, \mathrm{MeV}$")
-
-
-  pylab.savefig("bindingEnergy.png", dpi=300)
-
-
+  import numpy as np
+  Z = np.arange(42, 48)
+  A = 101
+  B = bindingEnergy(A, Z) / MeV
+  pylab.plot(Z, B)
+  pylab.xlabel('Z')
+  pylab.ylabel('B')
+  pylab.show()

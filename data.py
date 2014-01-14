@@ -1168,7 +1168,6 @@ def asinh(x):
   if isinstance(x, Quantity): return self.calc(np.arcsinh, der, reqUnitless=True)
   else:                       return np.arcsinh(x) 
 
-
 def cos(x):
   if isinstance(x, Quantity): return self.calc(np.cos, np.sin, reqUnitless=True)
   else:                       return np.cos(x) 
