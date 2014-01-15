@@ -485,6 +485,7 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertQuantity(data.sqrt(Quantity(1, 2)), 1, 1)
     self.assertQuantity(data.sqrt(Quantity(4, 2)), 2, 1/2)
     self.assertAlmostEqual(data.sqrt(      4    ), 2)
+    self.assertQuantity(data.sqrt(Quantity(1, 2, 'm^2')), 1, 1, self.METER)
 
     self.assertQuantity(data.exp(Quantity(1, 2)), math.e, 2 * math.e)
     self.assertQuantity(data.exp(Quantity(4, 2)), math.e**4, 2*math.e**4)

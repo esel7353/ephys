@@ -1151,44 +1151,44 @@ class Quantity(object):
 
 ################################################################################
 def sin(x):
-  if isinstance(x, Quantity): return x.calc(np.sin, np.cos, reqUnitless=True)
+  if isinstance(x, Quantity): return x.calc(np.sin, np.cos)
   else:                       return np.sin(x) 
 
 def sinh(x):
-  if isinstance(x, Quantity): return x.calc(np.sinh, np.cosh, reqUnitless=True)
+  if isinstance(x, Quantity): return x.calc(np.sinh, np.cosh)
   else:                       return np.sinh(x) 
 
 def asin(x):
-  def der(x): return 1 / np.sqrt(1-x**2)
-  if isinstance(x, Quantity): return x.calc(np.arcsin, der, reqUnitless=True)
+  der = lambda x: 1 / np.sqrt(1-x**2)
+  if isinstance(x, Quantity): return x.calc(np.arcsin, der)
   else:                       return np.arcsin(x) 
 
 def asinh(x):
-  def der(x): return 1 / np.sqrt(1+x**2)
-  if isinstance(x, Quantity): return x.calc(np.arcsinh, der, reqUnitless=True)
+  der = lambda x: 1 / np.sqrt(1+x**2)
+  if isinstance(x, Quantity): return x.calc(np.arcsinh, der)
   else:                       return np.arcsinh(x) 
 
 def cos(x):
-  if isinstance(x, Quantity): return x.calc(np.cos, np.sin, reqUnitless=True)
+  if isinstance(x, Quantity): return x.calc(np.cos, np.sin)
   else:                       return np.cos(x) 
 
 def cosh(x):
-  if isinstance(x, Quantity): return x.calc(np.cosh, np.sinh, reqUnitless=True)
+  if isinstance(x, Quantity): return x.calc(np.cosh, np.sinh)
   else:                       return np.cosh(x) 
 
 def acos(x):
-  def der(x): return -1 / np.sqrt(1-x**2)
-  if isinstance(x, Quantity): return x.calc(np.arccos, der, reqUnitless=True)
+  der = lambda x: -1 / np.sqrt(1-x**2)
+  if isinstance(x, Quantity): return x.calc(np.arccos, der)
   else:                       return np.arccos(x) 
 
 def acosh(x):
-  def der(x): return 1 / np.sqrt(x**2-1)
-  if isinstance(x, Quantity): return x.calc(np.arccosh, der, reqUnitless=True)
+  der = lambda x: 1 / np.sqrt(x**2-1)
+  if isinstance(x, Quantity): return x.calc(np.arccosh, der)
   else:                       return np.arccosh(x) 
 
 def tan(x):
-  def der(x): return 1 / np.cos(x)**2
-  if isinstance(x, Quantity): return x.calc(np.tan, der, reqUnitless=True)
+  der = lambda x: 1 / np.cos(x)**2
+  if isinstance(x, Quantity): return x.calc(np.tan, der)
   else:                       return np.tan(x) 
 
 def atan2(x, y):
@@ -1196,45 +1196,43 @@ def atan2(x, y):
   
 
 def tanh(x):
-  def der(x): return 1 / np.cosh(x)**2
-  if isinstance(x, Quantity): return x.calc(np.tanh, der, reqUnitless=True)
+  der = lambda x: 1 / np.cosh(x)**2
+  if isinstance(x, Quantity): return x.calc(np.tanh, der)
   else:                       return np.tanh(x) 
 
 def atan(x):
-  def der(x): return 1 / (x**2 + 1)
-  if isinstance(x, Quantity): return x.calc(np.arctan, der, reqUnitless=True)
+  der = lambda x: 1 / (x**2 + 1)
+  if isinstance(x, Quantity): return x.calc(np.arctan, der)
   else:                       return np.arctan(x) 
 
 def atanh(x):
-  def der(x): return 1 / (1 - x**2)
-  if isinstance(x, Quantity): return x.calc(np.arctanh, der, reqUnitless=True)
+  der = lambda x: 1 / (1 - x**2)
+  if isinstance(x, Quantity): return x.calc(np.arctanh, der)
   else:                       return np.arctanh(x) 
 
 def sqrt(x):
-  def der(x): return 1 / (2 * np.sqrt(x))
-  if isinstance(x, Quantity): return x.calc(np.sqrt, der, propagateUnit=0.5)
+  der = lambda x: 1 / (2 * np.sqrt(x))
+  if isinstance(x, Quantity): return x.calc(np.sqrt, der, propagateUnit=0.5, reqUnitless=False)
   else:                       return np.sqrt(x) 
 
 def exp(x):
-  if isinstance(x, Quantity): return x.calc(np.exp, np.exp, reqUnitless=True)
+  if isinstance(x, Quantity): return x.calc(np.exp, np.exp)
   else:                       return np.exp(x) 
 
 def log(x):
-  def der(x): return 1 / x
-  if isinstance(x, Quantity): return x.calc(np.log, der, reqUnitless=True)
+  der = lambda x: 1 / x
+  if isinstance(x, Quantity): return x.calc(np.log, der)
   else:                       return np.log(x) 
 
 def log2(x):
-  def der(x): return 1 / (x * log(2))
-  if isinstance(x, Quantity): return x.calc(np.log2, der, reqUnitless=True)
+  der = lambda x: 1 / (x * log(2))
+  if isinstance(x, Quantity): return x.calc(np.log2, der)
   else:                       return np.log2(x) 
 
 def log10(x):
-  def der(x): return 1 / (x * log(10))
-  if isinstance(x, Quantity): return x.calc(np.log10, der, reqUnitless=True)
+  der = lambda x: 1 / (x * log(10))
+  if isinstance(x, Quantity): return x.calc(np.log10, der)
   else:                       return np.log10(x) 
-
-
 
 ################################################################################
 # Init SI units
