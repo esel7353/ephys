@@ -41,6 +41,7 @@ class QuantityScalerTest(unittest.TestCase):
   
   def setUp(self):
     self.METER = [1] + [0]*7
+    Quantity.yesIKnowTheDangersAndPromiseToBeCareful()
 
   def assertQuantity(self, quantity, v, std, uvec=[0, 0, 0, 0, 0, 0, 0, 0], symbol='', label='', latex=''):
     self.assertAlmostEqual(quantity.value, v)
@@ -76,16 +77,14 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertRaises(data.ParticipantsAreNotIndependend, add, x, y)
 
     Quantity.yesIKnowTheDangersAndPromiseToBeCareful()
-
     # this should not raise an error
     mul(x, x)
     add(x, x)
     mul(x, y)
     add(x, y)
+
   
   def test_init(self):
-    Quantity.yesIKnowTheDangersAndPromiseToBeCareful()
-
     # value and error
     self.assertQuantity(Quantity(),                 1, 0)
     self.assertQuantity(Quantity(6),                6, 0)
@@ -150,8 +149,6 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertTrue(data.Radian.unitless())
 
   def test_comparison(self):
-    Quantity.yesIKnowTheDangersAndPromiseToBeCareful()
-
     # equal
     self.assertTrue(Quantity(2, 1)         == 2)
     self.assertTrue(Quantity(2, 1)         == 1)
@@ -233,8 +230,6 @@ class QuantityScalerTest(unittest.TestCase):
 
 
   def test_binaryOperators(self):
-    Quantity.yesIKnowTheDangersAndPromiseToBeCareful()
-
     # add
     self.assertQuantity(Quantity(4, 3) + 9,                         13, 3)
     self.assertQuantity(Quantity(4, 3) + Quantity(9),               13, 3)
@@ -423,7 +418,90 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertQuantity(y.calc(sq, dr, reqUnitless=False, propagateUnit=1),  49, 42, self.METER)
     self.assertQuantity(y.calc(sq, dr, reqUnitless=False, propagateUnit=2),  49, 42, [2]+[0]*7)
     self.assertQuantity(y.calc(sq, dr, reqUnitless=False, propagateUnit=pu), 49, 42, list(range(8)))
-    
+
+  def test_funcs(self):
+    pi = math.pi
+
+    # sin family
+    self.assertQuantity(data.sin(Quantity(0, 2)), 0, 2) 
+    self.assertQuantity(data.sin(Quantity(pi/2, 2)), 1, 0) 
+    self.assertAlmostEqual(data.sin(pi/2 ),    1) 
+
+    self.assertQuantity(data.sinh(Quantity(0, 2)), 0, 2) 
+    self.assertQuantity(data.sinh(Quantity(1, 2)), math.sinh(1), math.cosh(1)*2) 
+    self.assertAlmostEqual(  data.sinh(         1    ), math.sinh(1))
+
+    self.assertQuantity(data.asin(Quantity(0, 2)), 0, 2) 
+    self.assertQuantity(data.asin(Quantity(0.5, 2)), math.asin(0.5), 2/math.sqrt(1-0.5**2)) 
+    self.assertAlmostEqual(  data.asin(         0.5  ),   math.asin(0.5))
+
+    self.assertQuantity(data.asinh(Quantity(0, 2)), 0, 2) 
+    self.assertQuantity(data.asinh(Quantity(1, 2)), math.asinh(1), 2/math.sqrt(1+1**2)) 
+    self.assertAlmostEqual(  data.asinh(         1    ), math.asinh(1))
+
+    # cos family
+    self.assertQuantity(data.cos(Quantity(0, 2)), 1, 0) 
+    self.assertQuantity(data.cos(Quantity(pi/2, 2)), 0, -2) 
+    self.assertAlmostEqual(  data.cos(         pi/2 ),    0)
+
+
+    self.assertQuantity(data.cosh(Quantity(0, 2)), 1, 0) 
+    self.assertQuantity(data.cosh(Quantity(1, 2)), math.cosh(1), math.sinh(1)*2) 
+    self.assertAlmostEqual(  data.cosh(         1    ), math.cosh(1))
+
+
+    self.assertQuantity(data.acos(Quantity(0, 2)), math.acos(0), -2) 
+    self.assertQuantity(data.acos(Quantity(0.5, 2)), math.acos(0.5), -2/math.sqrt(1-0.5**2)) 
+    self.assertAlmostEqual(  data.acos(         0.5  ),   math.acos(0.5))
+
+
+    self.assertQuantity(data.acosh(Quantity(2, 2)), math.acosh(2), 2/math.sqrt(2**2-1))
+    self.assertQuantity(data.acosh(Quantity(3, 2)), math.acosh(3), 2/math.sqrt(3**2-1))
+    self.assertAlmostEqual(  data.acosh(         3    ), math.acosh(3))
+
+
+    # tan family
+    # atan2 not yet implemented
+    self.assertQuantity(data.tan(Quantity(0, 2)), 0, 2) 
+    self.assertQuantity(data.tan(Quantity(1, 2)), math.tan(1), 2/math.cos(1)**2) 
+    self.assertAlmostEqual(  data.tan(         1    ), math.tan(1))
+
+
+    self.assertQuantity(data.tanh(Quantity(0, 2)), 0, 2) 
+    self.assertQuantity(data.tanh(Quantity(1, 2)), math.tanh(1), 2/math.cosh(1)**2) 
+    self.assertAlmostEqual(  data.tanh(         1    ), math.tanh(1))
+
+
+    self.assertQuantity(data.atan(Quantity(0, 2)), 0, 2) 
+    self.assertQuantity(data.atan(Quantity(1, 2)), math.atan(1), 2/(1+1**2)) 
+    self.assertAlmostEqual(  data.atan(         1    ), math.atan(1))
+
+
+    self.assertQuantity(data.atanh(Quantity(0, 2)), 0, 2)
+    self.assertQuantity(data.atanh(Quantity(0.5, 2)), math.atanh(0.5), 2/(1-0.5**2))
+    self.assertAlmostEqual(  data.atanh(         0.5    ), math.atanh(0.5))
+
+    #misc
+    self.assertQuantity(data.sqrt(Quantity(1, 2)), 1, 1)
+    self.assertQuantity(data.sqrt(Quantity(4, 2)), 2, 1/2)
+    self.assertAlmostEqual(data.sqrt(      4    ), 2)
+
+    self.assertQuantity(data.exp(Quantity(1, 2)), math.e, 2 * math.e)
+    self.assertQuantity(data.exp(Quantity(4, 2)), math.e**4, 2*math.e**4)
+    self.assertAlmostEqual(data.exp(      4    ), math.e**4)
+
+    self.assertQuantity(data.log(Quantity(1, 2)), 0, 2)
+    self.assertQuantity(data.log(Quantity(4, 2)), math.log(4), 1/2)
+    self.assertAlmostEqual(data.log(      4    ), math.log(4))
+
+    self.assertQuantity(data.log2(Quantity(1, 2)), 0, 2/math.log(2))
+    self.assertQuantity(data.log2(Quantity(4, 2)), 2, 2/(math.log(2) * 4))
+    self.assertAlmostEqual(data.log2(      4    ), 2)
+
+    self.assertQuantity(data.log10(Quantity(1, 2)), 0, 2/math.log(10))
+    self.assertQuantity(data.log10(Quantity(100, 2)), 2, 2/(math.log(10) * 100))
+    self.assertAlmostEqual(data.log10(      100    ), 2)
+
 
 if __name__ == '__main__':
   unittest.main()
