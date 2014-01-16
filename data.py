@@ -336,7 +336,7 @@ class Quantity(object):
     """
     return not (self.uvec * Quantity.basePersistant).any() 
 
-  def __init__(self, value=1, stddev=0, unit=1, variance=0,
+  def __init__(self, value=1, stddev=0, unit=1, variance=None,
                symbol='', label='', latex=''):
     """
     Creates a new quantity object. There are many different ways to call
@@ -360,6 +360,7 @@ class Quantity(object):
                   also be a iterable. If so the quantity is treated as if it
                   has many values, which are all the same by coincidence. If
                   value is also a iterable, they both must be equal in length.
+                  This argument is overridden by the variance.
                   Defautl: 0
 
       unit      - The unit of the quantity. A multi-valued quantity can have
@@ -381,7 +382,7 @@ class Quantity(object):
       variance  - The variance is identical to the square of the standard
                   deviation. Internally the uncertainty is stored as the
                   variance. This means the stddev argument is just to
-                  shorten the call. The standard deviation overrides this
+                  shorten the call. The standard deviation is overridden by this
                   argument.
                   Default: 0
 
@@ -418,31 +419,35 @@ class Quantity(object):
       
     ########
     # store value
-    if isinstance(value, collections.Iterable) and not isinstance(value, np.ndarray):
+    if isinstance(value, collections.Iterable):
       # iterable must be converted to numpy array
-      self.value = np.array(value)
+      # the value will also be converted to a NEW numpy array if it also is a
+      # numpy array, because the it is not referenced from outside. The array
+      # might change, but references from outside presumably should not # change.
+      self.value = np.array(value) * 1. # new numpy array is a float
     else:
       # single value or already numpy array
       self.value  = value 
 
 
     ########
-    # convert standard deviation to variance
-    if isinstance(stddev, collections.Iterable) :
-      # iterable must be converted to numpy array
-      if not isinstance(stddev, np.ndarray): stddev = np.array(stddev)
-      # if standard deviation is given, overwrite variance
-      if (stddev > 0).any(): variance = stddev**2
+    # error
+    # if variance not given, use stddev.
+    if variance is None:
+      # convert standard deviation to variance and store
+      if isinstance(stddev, collections.Iterable) :
+        # iterable must be converted to numpy array, see value
+        stddev = np.array(stddev) * 1.
+        self.variance = stddev**2
+      else:
+        self.variance = stddev**2
     else:
-      # if standard deviation is given, overwrite variance
-      if stddev > 0: variance = stddev**2
-
-    ########
-    # store variance
-    if isinstance(value, collections.Iterable) and not isinstance(value, np.ndarray):
-      # iterable must be converted to numpy array
-      self.variance = np.array(variance)
-    self.variance = variance
+      # store variance
+      if isinstance(value, collections.Iterable):
+        # iterable must be converted to numpy array, see value
+        self.variance = np.array(variance) * 1.
+      else:
+        self.variance = variance
 
     ########
     # interpret unit
@@ -547,8 +552,8 @@ class Quantity(object):
           # number?
           try:
             sym = float(sym)
-            self.value    = self.value * sym**exp
-            self.variance = self.variance * (sym**exp)**2
+            self.value    *= sym**exp
+            self.variance *= (sym**exp)**2
           except ValueError:
             if '+-' in sym:
               value, stddev = sym.split('+-')
@@ -565,9 +570,9 @@ class Quantity(object):
       self.uvec = unit
     elif isinstance(unit, (int, float)):
       ### >>> Quantity(unit=1)
-      self.value    = self.value * unit
-      self.variance = self.variance * unit**2
-      self.uvec     = np.zeros(Quantity.dim, dtype='int8')
+      self.value    *= unit
+      self.variance *= unit**2
+      self.uvec      = np.zeros(Quantity.dim, dtype='int8')
     else:
       raise NotImplemented('Unit parameter must eighter be a string, a quantity object, an iteratable or an int/float')
 

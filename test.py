@@ -95,7 +95,7 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertQuantity(Quantity(6),                6, 0)
     self.assertQuantity(Quantity(6, 3),             6, 3)
     self.assertQuantity(Quantity(6, variance=4),    6, 2)
-    self.assertQuantity(Quantity(6, 3, variance=4), 6, 3)
+    self.assertQuantity(Quantity(6, 3, variance=4), 6, 2)
 
     # naming
     self.assertEqual(Quantity(symbol='fr').symbol, 'fr')
@@ -550,7 +550,7 @@ class QuantityVectorTest(unittest.TestCase):
     ms  = data.enumstr('s', 100)
 
 
-  def test_init(self):
+  def test_init_V(self):
     # value and error
     self.assertQuantity(Quantity(self.x), self.x, 0)
     self.assertQuantity(Quantity(self.x, 3), self.x, 3)
@@ -579,7 +579,8 @@ class QuantityVectorTest(unittest.TestCase):
 
     # string
     self.assertQuantity(Quantity(self.x, self.sx, '3 m^2 kg^-1 s'),  self.x*3, self.sx*3, [2, 1, -1] + [0]*5)
-    self.assertQuantity(Quantity(self.x, self.sx, '4+-2 N m'),       self.x*4, math.sqrt(self.x**2 * 2**2+4**2 * self.sx**2), [2, -2, 1] + [0]*5)
+    self.assertQuantity(Quantity(self.x, self.sx, '4+-2 N m'),       self.x*4, 
+                        np.sqrt(self.x**2 * 2**2+4**2 * self.sx**2), [2, -2, 1] + [0]*5)
 
     # full
     x = Quantity(self.z, self.sz, 'Meter', symbol=self.sym, label=self.lab, latex=self.lat)
