@@ -363,11 +363,12 @@ class Quantity(object):
                   Defautl: 0
 
       unit      - The unit of the quantity. A multi-valued quantity can have
-                  only ONE unit! Although this can be an iterable, which is
-                  then treated as the unit vector. This can also be an other
-                  Quantity object. Then the values will be multiplied, the
-                  errors will be propagated (Gaussian error propagation) and
-                  the unit will be copied.
+                  only ONE unit! Although this can be an iterable (except string
+                  and quantity object), which is then treated as the unit
+                  vector. This can also be an other Quantity object. Then the
+                  values will be multiplied, the errors will be propagated
+                  (Gaussian error propagation) and the unit will be copied.
+
                   This can also be a string. Then the method will try to
                   understand the unit based on the added base units,
                   prefixes and units. Only * and ^ are allowed. Spaced are
@@ -449,11 +450,7 @@ class Quantity(object):
       # >>> Quantity(unit=Meter)
       self.check(unit)  # check error independence
       self.uvec   = unit.uvec
-      # gaussian error propagation
-      if unit.variance > 0:
-        self.variance = self.value**2 * unit.variance + unit.value**2 * self.variance
-      else:
-        self.variance = unit.value**2 * self.variance
+      self.variance = self.value**2 * unit.variance + unit.value**2 * self.variance
 
       self.value *= unit.value
 
@@ -550,8 +547,8 @@ class Quantity(object):
           # number?
           try:
             sym = float(sym)
-            self.value    *= float(sym)**exp
-            self.variance *= (float(sym)**exp)**2
+            self.value    = self.value * sym**exp
+            self.variance = self.variance * (sym**exp)**2
           except ValueError:
             if '+-' in sym:
               value, stddev = sym.split('+-')
@@ -566,11 +563,10 @@ class Quantity(object):
       if len(unit) != Quantity.dim:
         raise Exception('Unit vector length missmatch: {} dim base, but {} given!'.format(Quantity.dim, len(unit)))
       self.uvec = unit
-
     elif isinstance(unit, (int, float)):
       ### >>> Quantity(unit=1)
-      self.value    *= unit
-      self.variance *= unit**2
+      self.value    = self.value * unit
+      self.variance = self.variance * unit**2
       self.uvec     = np.zeros(Quantity.dim, dtype='int8')
     else:
       raise NotImplemented('Unit parameter must eighter be a string, a quantity object, an iteratable or an int/float')
@@ -844,7 +840,7 @@ class Quantity(object):
       U = 3.6787944117144233 +- 0.7357588823428847 m^2 s^-3 kg A^-1
       Current: 8.154845485377136 +- 1.103638323514327 A
     """
-    if len(self) == 1:
+    if len(self) == 1 or 1:
       if self.symbol:
         naming = self.symbol + ' = '
       elif self.label:
@@ -1123,12 +1119,10 @@ class Quantity(object):
     return Quantity(value, variance=variance, unit=uvec)
 
 
-
   def str(self): pass
   def latex(self): pass
   def store(self): pass
   def lexport(self): pass
-
 
   class Iter(object):
     """
@@ -1148,6 +1142,11 @@ class Quantity(object):
       if not self.i < len(self.quantity): raise StopIteration()
       return self.quantity[self.i]
 
+def enumstr(s, *r):
+  l = []
+  for i in range(*r):
+    l.append(s + str(i))
+  return l
 
 ################################################################################
 def sin(x):
@@ -1191,14 +1190,25 @@ def tan(x):
   if isinstance(x, Quantity): return x.calc(np.tan, der)
   else:                       return np.tan(x) 
 
-def atan2(x, y):
-  raise NotImplemented('there is still work to do')
-  
-
 def tanh(x):
   der = lambda x: 1 / np.cosh(x)**2
   if isinstance(x, Quantity): return x.calc(np.tanh, der)
   else:                       return np.tanh(x) 
+
+def atan2(y, x):
+  # atan and atan2 only differ by multiples of pi in the
+  # 2pi modulus space: atan2 = +- atan + b pi
+  # therefore abs(d/dx atan2) = abs(d/dx atan)
+  if isinstance(x, Quantity) or isinstance(y, Quantity):
+    r = y/x
+    if not r.unitless():
+      raise IncompatibleUnits('Argument of atan2 must have same unit.')
+    val = np.arctan2(y.value, x.value)
+    der = 1 / (r.value**2 + 1)
+    std = der * r.stddev()
+    return Quantity(val, std)
+  else:
+    return np.arctan2(y, x) 
 
 def atan(x):
   der = lambda x: 1 / (x**2 + 1)
