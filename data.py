@@ -1191,8 +1191,7 @@ def tan(x):
   if isinstance(x, Quantity): return x.calc(np.tan, der)
   else:                       return np.tan(x) 
 
-def atan2(x, y):
-  raise NotImplemented('there is still work to do')
+def atan2(y, x):
   
 
 def tanh(x):
