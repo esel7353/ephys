@@ -605,6 +605,8 @@ class Quantity(object):
     To check this the two values are subtracted (so Gaussian error propagation
     occurs if necessary) and checks if the resulting standard deviation is
     greater or equal than the resulting absolute value.
+    When one participant is a multi-valued, the result will be a numpy array with
+    True or False, whether the values are equal or not.
     """
     # >>> x == y
     # >>> x == 4.5
@@ -617,11 +619,13 @@ class Quantity(object):
     To check this the two values are subtracted (so Gaussian error propagation
     occurs if necessary) and checks if the resulting standard deviation is
     less than the resulting absolute value.
+    When one participant is a multi-valued, the result will be a numpy array with
+    True or False, whether the values are less or not.
     """
     # >>> x < y
     # >>> x < 4.5
     x = self - other
-    return x.variance < x.value**2 and x.value < 0
+    return (x.variance < x.value**2) * (x.value < 0)
 
   def __gt__(self, other): 
     """
@@ -629,15 +633,17 @@ class Quantity(object):
     To check this the two values are subtracted (so Gaussian error propagation
     occurs if necessary) and checks if the resulting standard deviation is
     less than the resulting absolute value.
+    When one participant is a multi-valued, the result will be a numpy array with
+    True or False, whether the values are greater or not.
     """
     # >>> x > y
     # >>> x > 4.5
     x = self - other
-    return x.variance < x.value**2 and x.value > 0
+    return (x.variance < x.value**2) * (x.value > 0)
 
-  def __ne__(self, other):   return not self == other
-  def __ge__(self, other):   return self == other or self > other
-  def __le__(self, other):   return self == other or self < other
+  def __ne__(self, other):   return 1 - (self == other)
+  def __ge__(self, other):   return (self == other) + (self > other)
+  def __le__(self, other):   return (self == other) + (self < other)
                                    
   def __add__(self, other):
     """
