@@ -706,234 +706,183 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertQuantity(Quantity(s, sx) / Quantity((3,4,5), sx), (1, 1, 6/5), (math.sqrt(2/3**2),math.sqrt(2/4**2),6/5*math.sqrt(1/6**2+1/5**2)) )
 
 
-    #TODO
     # pow
-    err = math.sqrt((5*5**4)**2 * 2**2 + (5**5 * math.log(5))**2 * 1)
-    self.assertQuantity(Quantity(5, 2)**2, 25, 20)
-    self.assertQuantity(Quantity(5, 2, 'm')**2, 25, 20, [2]+[0]*7)
-    self.assertQuantity(Quantity(5, 2)**Quantity(2), 25, 20)
-    self.assertQuantity(Quantity(5, 2)**Quantity(5, 1), 5**5, err)
-    self.assertQuantity(Quantity(5, 2, 'm')**Quantity(5, 1), 5**5, err, [5]+[0]*7)
-    self.assertQuantity(Quantity(5, 2, 'm')**Quantity(5, 1, 'rad'), 5**5, err, [5]+[0]*7)
-
-    po = lambda x, y: x**y
-    self.assertRaises(data.IncompatibleUnits, po, Quantity(5, 2, 'm'), Quantity(5, 1, 'm'))
+    # assuming error propagation works fine
+    self.assertQuantity(Quantity(s) ** 2, (9, 16, 36) , 0)
+    self.assertQuantity(Quantity(3) ** s, (3**3, 3**4, 3**6) , 0)
+    self.assertQuantity(Quantity(s) ** s, (3**3, 4**4, 6**6) , 0)
+    self.assertQuantity(Quantity(s) ** Quantity(s), (3**3, 4**4, 6**6) , 0)
 
     # test r-forms
     # this will only test the correct linking. More rigorous tests located above.
-    self.assertQuantity(3 + Quantity(1, 2), 4, 2)
-    self.assertQuantity(3 + Quantity(1, 2,'m'), 4, 2, self.METER)
-    self.assertQuantity(3 - Quantity(1, 2), 2, 2)
-    self.assertQuantity(3 - Quantity(1, 2,'m'), 2, 2, self.METER)
-    self.assertQuantity(3 * Quantity(2, 1), 6, 3)
-    self.assertQuantity(3 * Quantity(2, 1,'m'), 6, 3, self.METER)
-    self.assertQuantity(8 / Quantity(2, 1), 4, 2)
-    self.assertQuantity(8 / Quantity(2, 1,'m'), 4, 2, [-1]+[0]*7)
-    err = math.log(2) * 2**3 * 1
-    self.assertQuantity(2** Quantity(3, 1), 8, err)
-
-    self.assertRaises(data.IncompatibleUnits, po, 8, Quantity(2, 1,'m'))
-
+    self.assertQuantity(3 + Quantity(s), (6, 7, 9) , 0)
+    self.assertQuantity(3 - Quantity(s), (0, -1, -3) , 0)
+    self.assertQuantity(3 * Quantity(s), (9, 12, 18) , 0)
+    self.assertQuantity(1 / Quantity(s), (1/3, 1/4, 1/6) , 0)
 
 
   def test_errorManipulation_multi(self):
+    s = (3, 4, 5)
+    sx= (1, 1, 2)
     # relative error
-    self.assertQuantity(Quantity(3) % 0.1, 3, 0.3)
-    self.assertQuantity(Quantity(3, 1) % 0.1, 3, math.sqrt(0.3**2 + 1**2))
-    self.assertQuantity(Quantity(3, 1, 'm') % 0.1, 3, math.sqrt(0.3**2 + 1**2), self.METER)
-    self.assertQuantity(Quantity(3, 1, 'm') % Quantity(0.1, 100), 3, math.sqrt(0.3**2 + 1**2), self.METER)
-    rel = lambda x, r: x % r
-    self.assertRaises(data.IncompatibleUnits, rel, Quantity(3, 1, 'm'), Quantity(3, 2, 'm'))
-    
+    self.assertQuantity( Quantity(s, sx) % 0.1, s, (math.sqrt(1 + 0.3**2), math.sqrt(1 + 0.4**2), math.sqrt(4 + 0.5**2)) )
+    self.assertQuantity( Quantity(s, sx) % (0.1, 0.2, 0.3), s, (math.sqrt(1 + 0.3**2), math.sqrt(1 + 0.8**2), math.sqrt(4 + 1.5**2)) )
 
     # absolute error
-    self.assertQuantity(Quantity(3) | 0.1, 3, 0.1)
-    self.assertQuantity(Quantity(3, 1) | 0.1, 3, math.sqrt(0.1**2 + 1**2))
-    self.assertQuantity(Quantity(3, 1, 'm') | 0.1, 3, math.sqrt(0.1**2 + 1**2), self.METER)
-    self.assertQuantity(Quantity(3, 1, 'm') | Quantity(0.1, 100, 'm'), 3, math.sqrt(0.1**2 + 1**2), self.METER)
-    ab = lambda x, r: x | r
-    self.assertRaises(data.IncompatibleUnits, ab, Quantity(3, 1, 'm'), Quantity(3, 2))
+    self.assertQuantity( Quantity(s, sx) | 1, s, (math.sqrt(1 + 1), math.sqrt(1 + 1), math.sqrt(4 + 1)) )
+    self.assertQuantity( Quantity(s, sx) | (1, 2, 3), s, (math.sqrt(2), math.sqrt(5), math.sqrt(13)) )
 
     # remove
-    self.assertQuantity(Quantity(3, 1, 'm').removeError(), 3, 0, self.METER)
+    self.assertQuantity(Quantity(s, sx, 'm').removeError(), s, 0, self.METER)
 
 
   def test_unitaryOperators_multi(self):
-    self.assertQuantity( +Quantity(3, 1, 'm'), 3, 1, self.METER)
-    self.assertQuantity( -Quantity(3, 1, 'm'), -3, 1, self.METER)
-    self.assertAlmostEqual( abs(Quantity(-3, 1, 'm')), 3, 1, self.METER)
+    s = (3, 4, -5)
+    sx= (1, 1, 2)
+    self.assertQuantity( +Quantity(s, sx, 'm'), s, sx, self.METER)
+    self.assertQuantity( -Quantity(s, sx, 'm'), (-3,-4,5), sx, self.METER)
+    self.assertQuantity( abs(Quantity(s, sx, 'm')), (3,4,5), sx, self.METER)
 
-    self.assertAlmostEqual(complex(Quantity(-3.3+2j, 1, 'm')), -3.3+2j)
-    self.assertAlmostEqual(float(Quantity(-3.2, 1, 'm')), -3.2)
-    self.assertAlmostEqual(int(Quantity(-3.2, 1, 'm')), -3)
+
+    self.assertRaises(TypeError, complex, Quantity(np.arange(10) * (-3.3+2j), 1, 'm'))
+    self.assertRaises(TypeError, float, Quantity(np.arange(10) * -3.3, 1, 'm'))
+    self.assertRaises(TypeError, int, Quantity(np.arange(10) * -3, 1, 'm'))
 
 
   def test_len_multi(self):
     # remember these are the single valued tests
-    self.assertEqual(len(Quantity(1, 1, 'm', symbol='a', label='Ab', latex='A_b')), 1)
+    s  = (3,4,5)
+    sx = (1,1,2)
+    sy = ('a', 'b', 'c')
+    la = ('height', 'width', 'depths')
+    lx = ('\\alpha', '\\beta', '\\gamma')
+
+    self.assertEqual(len(Quantity(s, 1, 'm', symbol='a', label='Ab', latex='A_b')), 3)
+    self.assertEqual(len(Quantity(2, sx, 'm', symbol='a', label='Ab', latex='A_b')), 3)
+    self.assertEqual(len(Quantity(2, sx, 'm', symbol=sy, label='Ab', latex='A_b')), 3)
+    self.assertEqual(len(Quantity(2, 1, 'm', symbol='a', label=la, latex='A_b')), 3)
+    self.assertEqual(len(Quantity(2, 1, 'm', symbol='a', label='Ab', latex=lx)), 3)
+    self.assertEqual(len(Quantity(s, sx, 'm', symbol=sy, label=la, latex=lx)), 3)
+
+    self.assertRaises(ValueError, len, Quantity( (1,2,3,4), (1,2,3)) )
 
   def test_buildinStr_multi(self):
-    self.assertEqual(str(Quantity(3.1, 1.1, 'm')), '3.1 +- 1.1 m')
-    self.assertEqual(str(Quantity(3.1, 1.1, 'J')), '3.1 +- 1.1 m^2 s^-2 kg')
-    self.assertEqual(str(Quantity(3.1, 1.1, 'm', symbol='a')), 'a = 3.1 +- 1.1 m')
-    self.assertEqual(str(Quantity(3.1, 1.1, 'm', label='Ab')), 'Ab: 3.1 +- 1.1 m')
-    self.assertEqual(str(Quantity(3.1, 1.1, 'm', symbol='a', label='Ab')), 'a = 3.1 +- 1.1 m')
+    s  = (3,4,5)
+    sx = (1,1,2)
+    sy = ('a', 'b', 'c')
+    la = ('height', 'width', 'depths')
+    lx = ('\\alpha', '\\beta', '\\gamma')
+
+    self.assertEqual(str(Quantity(s, sx, 'm')),               '[ 3.  4.  5.] +- [ 1.  1.  2.] m')
+    self.assertEqual(str(Quantity(s, sx, 'm', symbol=sy)),    '[a, b, c] = [ 3.  4.  5.] +- [ 1.  1.  2.] m')
+    self.assertEqual(str(Quantity(s, sx, 'm', latex=lx)),     '[ 3.  4.  5.] +- [ 1.  1.  2.] m')
+    self.assertEqual(str(Quantity(s, sx, 'm', label=la)),     '[height, width, depths]: [ 3.  4.  5.] +- [ 1.  1.  2.] m')
 
   def test_stddev_multi(self):
-    self.assertAlmostEqual(Quantity(3, 1).stddev(), 1)
-    self.assertAlmostEqual(Quantity(3, 2).stddev(), 2)
-    self.assertAlmostEqual(Quantity(3, 3, 'm').stddev(), 3)
+    s  = (3,4,5)
+    sx = (1,1,2)
+    self.assertTrue(np.allclose(Quantity(s, sx).stddev(), sx))
+    self.assertTrue(np.allclose(Quantity(s, sx).stddev(), sx))
+    self.assertTrue(np.allclose(Quantity(s, sx, 'm').stddev(), sx))
 
   def test_sunit_multi(self):
-    self.assertEqual(data.Meter.sunit(), 'm')
-    self.assertEqual(data.Volt.sunit(), 'm^2 s^-3 kg A^-1')
-    self.assertEqual(data.Joule.sunit(), 'm^2 s^-2 kg')
-    self.assertEqual(data.Radian.sunit(), 'rad')
-    self.assertEqual(Quantity().sunit(), '')
+    self.assertEqual(Quantity(self.x, self.sx, 'km').sunit(), 'm')
 
   def test_repr_multi(self):
-    x = Quantity(42, 1, 'm', latex='f')
-    y = Quantity(42, 1)
-    z = Quantity(42, 1, 'm', symbol='s', label='a', latex='g')
-    self.assertQuantity(eval(repr(x)), 42, 1, self.METER, latex='f')
-    self.assertQuantity(eval(repr(y)), 42, 1)
-    self.assertQuantity(eval(repr(z)), 42, 1, self.METER, symbol='s', label='a', latex='g')
+    from numpy import array
+    s  = (3,4,5)
+    sx = (1,1,2)
+    sy = ('a', 'b', 'c')
+    la = ('height', 'width', 'depths')
+    lx = ('\\alpha', '\\beta', '\\gamma')
+
+    x = Quantity(s, 1, 'm', latex=la)
+    y = Quantity(s, sx)
+    z = Quantity(s, sx, 'm', symbol=sy, label=la, latex=lx)
+    self.assertQuantity(eval(repr(x)), s, 1, self.METER, latex=la)
+    self.assertQuantity(eval(repr(y)), s, sx)
+    self.assertQuantity(eval(repr(z)), s, sx, self.METER, symbol=sy, label=la, latex=lx)
 
 
   def test_xxxitem_multi(self):
-    x = Quantity(42, 3, 'm', symbol='s', label='f', latex='l_a')
-    self.assertQuantity(x[0], 42, 3, self.METER, symbol='s', label='f', latex='l_a')
-    self.assertQuantity(x   , 42, 3, self.METER, symbol='s', label='f', latex='l_a')
+    s  = (6,7,8)
+    sx = (1,2,1)
+    sy = ('a', 'b', 'c')
+    la = ('height', 'width', 'depths')
+    lx = ('\\alpha', '\\beta', '\\gamma')
+    x = Quantity(s, sx, 'm', symbol=sy, label=la, latex=lx)
 
-    x[0] = Quantity(43, 1, 'm')
-    self.assertQuantity(x[0], 43, 1, self.METER, symbol='s', label='f', latex='l_a')
-    self.assertQuantity(x   , 43, 1, self.METER, symbol='s', label='f', latex='l_a')
+    self.assertQuantity(x[1], 7, 2, self.METER, symbol='b', label='width', latex='\\beta')
+    self.assertQuantity(x[2], 8, 1, self.METER, symbol='c', label='depths', latex='\\gamma')
 
-    x[0] = 5
-    self.assertQuantity(x[0], 5, 0 , self.METER, symbol='s', label='f', latex='l_a')
-    self.assertQuantity(x   , 5, 0 , self.METER, symbol='s', label='f', latex='l_a')
+    x[1] = Quantity(42, 5, 'm')
+    self.assertQuantity(x[1], 42, 5, self.METER, symbol='b', label='width', latex='\\beta')
+    self.assertQuantity(x[2], 8, 1, self.METER, symbol='c', label='depths', latex='\\gamma')
 
-    x[:] = 5
-    self.assertQuantity(x[0], 5, 0 , self.METER, symbol='s', label='f', latex='l_a')
-    self.assertQuantity(x   , 5, 0 , self.METER, symbol='s', label='f', latex='l_a')
+    x[1] = Quantity(41, 1, 'm', symbol='w')
+    self.assertQuantity(x[1], 41, 1, self.METER, symbol='w', label='width', latex='\\beta')
+    self.assertQuantity(x[2], 8, 1, self.METER, symbol='c', label='depths', latex='\\gamma')
+
+    x[1] = 5
+    self.assertQuantity(x[1], 5, 0, self.METER, symbol='w', label='width', latex='\\beta')
+
+    x = Quantity(s, sx, 'm')
+    x[1] = Quantity(42, 5, 'm', symbol='a')
+    self.assertQuantity(x[1], 42, 5, self.METER, symbol='a')
+    self.assertQuantity(x[2], 8, 1, self.METER)
+
 
     def wu(u):  x[0] = Quantity(1, 0, u)
     def wi(i):  x[i] = 5
     def de(i):  del x[i]
     self.assertRaises(data.IncompatibleUnits, wu, 'J')
-    self.assertRaises(IndexError, wi, 2)
-    self.assertRaises(ValueError, de, 0)
+    self.assertRaises(IndexError, wi, 5)
+
+    del x[0]
+    self.assertQuantity(x[0], 42, 5, self.METER, symbol='a')
+    self.assertQuantity(x[1], 8, 1, self.METER)
 
     ran = 0
     for X in x:
       ran += 1
-      self.assertQuantity(X, 5, 0 , self.METER, symbol='s', label='f', latex='l_a')
-    self.assertEqual(ran, 1)
+    self.assertEqual(ran, 2)
 
 
   def test_calc_multi(self):
-    x = Quantity(7, 3)
-    y = Quantity(7, 3, 'm')
+    x = Quantity((7,8,9), (1,1,2))
 
     sq = lambda a: a**2
     dr = lambda a: 2*a
-    pu = lambda a: list(range(8))
 
-    self.assertQuantity(x.calc(sq, dr),  49, 42)
-    self.assertQuantity(x.calc(sq, 2*7), 49, 42)
-    self.assertQuantity(x.calc(sq),      49, 42)
-
-    self.assertQuantity(y.calc(sq, dr, reqUnitless=False), 49, 42)
-    self.assertQuantity(y.calc(sq, dr, reqUnitless=False, propagateUnit=1),  49, 42, self.METER)
-    self.assertQuantity(y.calc(sq, dr, reqUnitless=False, propagateUnit=2),  49, 42, [2]+[0]*7)
-    self.assertQuantity(y.calc(sq, dr, reqUnitless=False, propagateUnit=pu), 49, 42, list(range(8)))
+    self.assertQuantity(x.calc(sq, dr),  (7**2,8**2,9**2), (2*1*7,2*1*8,2*2*9) )
 
   def test_funcs_multi(self):
     pi = math.pi
 
     # sin family
-    self.assertQuantity(data.sin(Quantity(0, 2)), 0, 2) 
-    self.assertQuantity(data.sin(Quantity(pi/2, 2)), 1, 0) 
-    self.assertAlmostEqual(data.sin(      pi/2 ),    1) 
-
-    self.assertQuantity(data.sinh(Quantity(0, 2)), 0, 2) 
-    self.assertQuantity(data.sinh(Quantity(1, 2)), math.sinh(1), math.cosh(1)*2) 
-    self.assertAlmostEqual(  data.sinh(    1    ), math.sinh(1))
-
-    self.assertQuantity(data.asin(Quantity(0, 2)), 0, 2) 
-    self.assertQuantity(data.asin(Quantity(0.5, 2)), math.asin(0.5), 2/math.sqrt(1-0.5**2)) 
-    self.assertAlmostEqual(  data.asin(    0.5  ),   math.asin(0.5))
-
-    self.assertQuantity(data.asinh(Quantity(0, 2)), 0, 2) 
-    self.assertQuantity(data.asinh(Quantity(1, 2)), math.asinh(1), 2/math.sqrt(1+1**2)) 
-    self.assertAlmostEqual(  data.asinh(    1    ), math.asinh(1))
+    self.assertQuantity(data.sin(Quantity( (0,pi/2), (2,2))), (0,1), (2,0)) 
+    self.assertQuantity(data.sinh(Quantity((0,1), (2,2))), (0, math.sinh(1)), (2, math.cosh(1)*2)) 
+    self.assertQuantity(data.asin(Quantity((0,0.5), (2,2))), (0,math.asin(0.5)), (2,2/math.sqrt(1-0.5**2))) 
+    self.assertQuantity(data.asinh(Quantity((0,1), (2,2))), (0,math.asinh(1)), (2,2/math.sqrt(1+1**2))) 
 
     # cos family
-    self.assertQuantity(data.cos(Quantity(0, 2)), 1, 0) 
-    self.assertQuantity(data.cos(Quantity(pi/2, 2)), 0, -2) 
-    self.assertAlmostEqual(  data.cos(    pi/2 ),    0)
-
-
-    self.assertQuantity(data.cosh(Quantity(0, 2)), 1, 0) 
-    self.assertQuantity(data.cosh(Quantity(1, 2)), math.cosh(1), math.sinh(1)*2) 
-    self.assertAlmostEqual(  data.cosh(    1    ), math.cosh(1))
-
-
-    self.assertQuantity(data.acos(Quantity(0, 2)), math.acos(0), -2) 
-    self.assertQuantity(data.acos(Quantity(0.5, 2)), math.acos(0.5), -2/math.sqrt(1-0.5**2)) 
-    self.assertAlmostEqual(  data.acos(         0.5  ),   math.acos(0.5))
-
-
-    self.assertQuantity(data.acosh(Quantity(2, 2)), math.acosh(2), 2/math.sqrt(2**2-1))
-    self.assertQuantity(data.acosh(Quantity(3, 2)), math.acosh(3), 2/math.sqrt(3**2-1))
-    self.assertAlmostEqual(  data.acosh(    3    ), math.acosh(3))
-
+    self.assertQuantity(data.cos(Quantity((0,pi/2), (2,2))), (1,0), (0,-2)) 
+    self.assertQuantity(data.cosh(Quantity((0,1), (2,2))), (1,math.cosh(1)), (0,math.sinh(1)*2)) 
+    self.assertQuantity(data.acos(Quantity((0,0.5), (2,2))), (math.acos(0),math.acos(0.5)), (-2,-2/math.sqrt(1-0.5**2)))
+    self.assertQuantity(data.acosh(Quantity((2,3), (2,2))), (math.acosh(2), math.acosh(3)), (2/math.sqrt(2**2-1),2/math.sqrt(3**2-1)))
 
     # tan family
-    self.assertQuantity(data.tan(Quantity(0, 2)), 0, 2) 
-    self.assertQuantity(data.tan(Quantity(1, 2)), math.tan(1), 2/math.cos(1)**2) 
-    self.assertAlmostEqual(  data.tan(    1    ), math.tan(1))
-
-
-    self.assertQuantity(data.tanh(Quantity(0, 2)), 0, 2) 
-    self.assertQuantity(data.tanh(Quantity(1, 2)), math.tanh(1), 2/math.cosh(1)**2) 
-    self.assertAlmostEqual(  data.tanh(    1    ), math.tanh(1))
-
-
-    self.assertQuantity(data.atan(Quantity(0, 2)), 0, 2) 
-    self.assertQuantity(data.atan(Quantity(1, 2)), math.atan(1), 2/(1+1**2)) 
-    self.assertAlmostEqual(  data.atan(         1    ), math.atan(1))
-
-    self.assertQuantity(data.atan2(Quantity(0, 2), Quantity(1, 0)), 0, 2) 
-    self.assertQuantity(data.atan2(Quantity(1, 2), Quantity(1, 0)), math.atan(1), 2/(1+1**2)) 
-    self.assertAlmostEqual(  data.atan2(         1, 1    ), math.atan(1))
-    self.assertQuantity(data.atan2(Quantity(2, 2), Quantity(-1, 1)), math.atan2(2, -1), math.sqrt(8) / (1+2**2))
-
-    self.assertQuantity(data.atanh(Quantity(0, 2)), 0, 2)
-    self.assertQuantity(data.atanh(Quantity(0.5, 2)), math.atanh(0.5), 2/(1-0.5**2))
-    self.assertAlmostEqual(  data.atanh(    0.5    ), math.atanh(0.5))
+    self.assertQuantity(data.tan(Quantity((0,1), (2,2))), (0,math.tan(1)), (2,2/math.cos(1)**2))
+    self.assertQuantity(data.tanh(Quantity((0,1), (2,2))), (0,math.tanh(1)), (2,2/math.cosh(1)**2)) 
+    self.assertQuantity(data.atan(Quantity((0,1), (2,2))), (0, math.atan(1)), (2,2/(1+1**2))) 
+    self.assertQuantity(data.atan2(Quantity((0,1), (2,2)), Quantity((1,1), (0,0))), (0,math.atan(1)), (2,2/(1+1**2))) 
+    self.assertQuantity(data.atanh(Quantity((0,0.5), (2,2))), (0,math.atanh(0.5)), (2,2/(1-0.5**2)))
 
     #misc
-    self.assertQuantity(data.sqrt(Quantity(1, 2)), 1, 1)
-    self.assertQuantity(data.sqrt(Quantity(4, 2)), 2, 1/2)
-    self.assertAlmostEqual(data.sqrt(      4    ), 2)
-    self.assertQuantity(data.sqrt(Quantity(1, 2, 'm^2')), 1, 1, self.METER)
+    self.assertQuantity(data.sqrt(Quantity((1,4), (2,2))), (1,2), (1,1/2))
+    self.assertQuantity(data.exp(Quantity((1,4), (2,2))), (math.e, math.e**4), (2 * math.e,2*math.e**4))
+    self.assertQuantity(data.log(Quantity((1,4), (2,2))), (0, math.log(4)), (2,1/2))
 
-    self.assertQuantity(data.exp(Quantity(1, 2)), math.e, 2 * math.e)
-    self.assertQuantity(data.exp(Quantity(4, 2)), math.e**4, 2*math.e**4)
-    self.assertAlmostEqual(data.exp(      4    ), math.e**4)
-
-    self.assertQuantity(data.log(Quantity(1, 2)), 0, 2)
-    self.assertQuantity(data.log(Quantity(4, 2)), math.log(4), 1/2)
-    self.assertAlmostEqual(data.log(      4    ), math.log(4))
-
-    self.assertQuantity(data.log2(Quantity(1, 2)), 0, 2/math.log(2))
-    self.assertQuantity(data.log2(Quantity(4, 2)), 2, 2/(math.log(2) * 4))
-    self.assertAlmostEqual(data.log2(      4    ), 2)
-
-    self.assertQuantity(data.log10(Quantity(1, 2)), 0, 2/math.log(10))
-    self.assertQuantity(data.log10(Quantity(100, 2)), 2, 2/(math.log(10) * 100))
-    self.assertAlmostEqual(data.log10(      100    ), 2)
 
 if __name__ == '__main__':
   unittest.main()

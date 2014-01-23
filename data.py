@@ -318,9 +318,17 @@ class Quantity(object):
       up:
       >>> U = Quantity(1, Meter).name('l', 'length')
     """
-    if symbol is not None:    self.symbol = symbol
-    if label is not None:     self.label = label
-    if latex is not None:     self.latex = latex
+    if symbol is not None:
+      if isinstance(symbol, str): self.symbol = symbol
+      else:                       self.symbol = list(symbol)
+
+    if label is not None:
+      if isinstance(label, str): self.label = label
+      else:                      self.label = list(label)
+     
+    if latex is not None:
+      if isinstance(latex, str): self.latex = latex
+      else:                      self.latex = list(latex)
 
     return self
 
@@ -408,9 +416,14 @@ class Quantity(object):
 
     ########
     # name quantity
-    self.symbol = symbol
-    self.label  = label
-    self.latex  = latex
+    if isinstance(symbol, str): self.symbol = symbol
+    else:                       self.symbol = list(symbol)
+
+    if isinstance(label, str): self.label = label
+    else:                      self.label = list(label)
+
+    if isinstance(latex, str): self.latex = latex
+    else:                      self.latex = list(latex)
 
     # EXCEPTION: if value is string, interpret as unit.
     if isinstance(value, str):
@@ -763,7 +776,7 @@ class Quantity(object):
         raise IncompatibleUnits('Relative error must not have a unit.')
       std = self.value * other.value
       return self + Quantity(0, stddev=std, unit=self.uvec, label=self.label, symbol=self.symbol, latex=self.latex)
-    elif isinstance(other, (int, float)):
+    elif isinstance(other, (int, float, collections.Iterable)):
       # >>> x % 0.4
       return self % Quantity(other)
 
@@ -784,7 +797,7 @@ class Quantity(object):
       except IncompatibleUnits:
         raise IncompatibleUnits('Can not add absolute error given in {} for a quantity measured in {}.'.format(other.sunit(), self.sunit()))
 
-    elif isinstance(other, (int, float)):
+    elif isinstance(other, (int, float, collections.Iterable)):
       # >>> x | 0.4
       return self | Quantity(other, unit=self.uvec)
 
@@ -833,9 +846,17 @@ class Quantity(object):
     return Quantity(abs(self.value), variance=self.variance, unit=self.uvec)
 
   # Type Conversions
-  def __complex__(self): return complex(self.value)
-  def __int__(self):     return int(self.value)
-  def __float__(self):   return float(self.value)
+  def __complex__(self):
+    """ does not work for multi-valued quantities """
+    return complex(self.value)
+
+  def __float__(self):
+    """ does not work for multi-valued quantities """
+    return float(self.value)
+
+  def __int__(self):
+    """ does not work for multi-valued quantities """
+    return int(self.value)
 
   def __str__(self): 
     """
@@ -844,7 +865,7 @@ class Quantity(object):
     Quantity.str and Quantity.latex.  If the quantity has a symbol (or a label,
     if no symbol is present) the name will precedent the values. The unit will
     added in the  Quantity.sunit format.
-    If the quantity object is a multi-valued object, a table formatted string is returned.
+    If the quantity object is a multi-valued object, no table formatted string is returned.
 
     Examples:
       3.183098861837907 +- 0.6366197723675814 m^2 s^-2 kg
@@ -853,9 +874,19 @@ class Quantity(object):
     """
     if len(self) == 1 or 1:
       if self.symbol:
-        naming = self.symbol + ' = '
+        if isinstance(self.symbol, (list, tuple)):
+          naming  = "["
+          naming += ", ".join(self.symbol)
+          naming += "] = "
+        else:
+          naming = self.symbol + ' = '
       elif self.label:
-        naming = self.label + ': '
+        if isinstance(self.label, (list, tuple)):
+          naming  = "["
+          naming += ", ".join(self.label)
+          naming += "]: "
+        else:
+          naming = self.label + ': '
       else:
         naming = ''
       return "{}{} +- {} {}".format(naming, self.value, self.stddev(), self.sunit())
@@ -931,7 +962,7 @@ class Quantity(object):
       if not isinstance(self.label, str) and hasattr(self.label, '__len__'):
         if length == 1: length = len(self.label)
         elif length != len(self.label): raise ValueError()
-      if not isinstance(self.label, str) and hasattr(self.latex, '__len__'):
+      if not isinstance(self.latex, str) and hasattr(self.latex, '__len__'):
         if length == 1: length = len(self.latex)
         elif length != len(self.latex): raise ValueError()
     except ValueError:
@@ -1054,8 +1085,17 @@ class Quantity(object):
     """
     if len(self) == 1:  # as a side effect checks for consistent lengths
       raise ValueError('Can not delete slice or item from single valued quantity.') 
-    if hasattr(self.value, '__delitem__'): del self.value[key]
-    if hasattr(self.variance, '__delitem__'): del self.variance[key]
+
+    # np.arrays do not support deleting...
+    if hasattr(self.value, '__delitem__'):
+       v = list(self.value) 
+       del v[key]
+       self.value = v
+
+    if hasattr(self.variance, '__delitem__'):
+       v = list(self.variance) 
+       del v[key]
+       self.variance = v
 
     # naming properties are always iterable because they are strings. To
     # checks if they are multi-valued, I test if they are not a string.
