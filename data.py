@@ -486,6 +486,14 @@ class Quantity(object):
         exp = float(exp)
           
         if exp % 1 == 0: exp = int(exp)
+
+        ###################################################
+        # This search will be removed shortly, because    #
+        # the method _searchUnit will do its job.         #
+        # The code will be left here for a while as a     #
+        # backup!
+        ###################################################
+
         # search hierarchy:
         #  (1) base symbol
         #  (2) unit symbol
@@ -1174,6 +1182,221 @@ class Quantity(object):
   def latex(self): pass
   def store(self): pass
   def lexport(self): pass
+
+  class _UnitToken(object):
+    """
+    This class is used for (code) efficient parsing and representation of unit
+    strings. In fact this class one single term in a unit string. This class is
+    intended to keep some data, and to not have some fancy methods!
+
+    This class is only used internally!
+    """
+    def __init__(self, symbol, uvec, exponent=1, prefix=1):
+      """
+      Constructor of UnitToken class.
+      
+      Parameters:
+        symbol    - The symbol as it appeared in the unit string. This means
+                    that if the unit is prefixed, the prefix is supposed to be
+                    included here.
+
+        uvec      - This is the unit vector representing the unit, i.e. a list
+                    or tuple of Quantity.dim length.
+
+        exponent  - The exponent as it appeared in the unit string, i.e. the
+                    part after the '^' character. This should be an integer.
+                    Default: 1
+
+        prefix    - If the unit is prefixed, this must be its numerical
+                    prefactor regarding the unit vector. Default: 1
+      """
+      self.symbol = symbol
+      self.uvec = uvec
+      self.exponent = exponent
+      self.prefix = prefix
+                    
+  class _VaerToken(object):
+    """
+    This class is used for (code) efficient parsing and representation of unit
+    strings. This class represents the 'a+-b' tokens in the string. This class
+    is intended to keep only the valued a and b, and to not have some fancy
+    methods!
+    The name is an abbreviation of value and error.
+
+    This class is only used internally!
+    """
+    def __init__(self, value, error):
+      """
+      Constructor of VaerToken class.
+
+      Parameters: should be self explaining...
+      """
+      self.value = value
+      self.error = error
+
+  def _parseUnitString(s):
+    """
+    This method is supposed to transform a given unit string into a list or a
+    tuple which contains UnitToken and VaerToken objects which represent the
+    individual tokens of the unit string.
+
+    The unit string comply with the following rules. Otherwise an ValueError will
+    be raised. The actual check and analysis is done using regular expressions,
+    which might be slightly different. Refer to the source code for detailed
+    information.
+      - the syntax of a unit token is: [prefix]unit[^[-]number]
+      - the syntax of a value/error token is: [-]number[+-number]
+      - two tokens must be separated by either * or / or a white space
+      - If the separator is a slash, ALL subsequent tokens' exponents will be
+        multiplied by -1. If there is more then one slash, the exponents will be
+        multiplied by (-1)^number of slash.
+        for example: m / s / J is equal to m * J / s
+      - BRACKETS OF ANY SHAPE ARE NOT PERMITTED! (This feature might be added
+        in later versions.)
+
+    This method uses the method _seachUnit.
+
+    Parameter:
+      s - the string to be parsed
+
+    Return:
+      a list/tuple. The items will represent unit and vaer tokes using the
+      corresponding classes.
+
+    This method is only used internally!
+    """
+    l = []
+    mode = 1
+
+    # building regular expression
+    # The regular expression will not check if the units and prefixed are known.
+    rUnitToken = r'([a-zA-Z])+(\s*\^\s*([0-9]+(\.[0-9]+)?))?'
+    rVaerToken = r'([0-9]+(.[0-9]+)?)(\s*\+-\s*([0-9]+(.[0-9]+)?))?'
+    rSeparator = r'\s*([\s*/])\s*'
+    r          = '(({}|{})($|{}))*$'.format(rUnitToken, rVaerToken, rSeparator)
+
+    # check overall format
+    if not re.match(r, s): raise ValueError('Unit string is not properly formatted!')
+
+    # iterate over tokens
+    for token in re.finditer('({}|{}|{})'.format(rUnitToken, rVaerToken, rSeparator), s):
+      token = token.group(0)
+
+      # analyse unit token
+      m = re.match(rUnitToken, token)
+      if m:
+        sym = m.group(1)
+        exp = m.group(3)
+        # check if sym is valid unit
+        l.append(Quantity._UnitToken(m.group()))
+        continue
+
+      # analyse value error token
+      m = re.match(rVaerToken, token)
+      if m:
+        val = float(m.group(1))
+        err = float(m.group(4) or 0)
+        l.append(Quantity._VaerToken(val, err))
+        continue
+
+      # analyse separator
+      m = re.match(rSeparator, token)
+      if m:
+        if m.group(1) == '/': mode *= -1
+
+  def _seachUnit(sym):
+    """
+    TODO
+
+    Search Hierarchy:
+      (1) base symbol
+      (2) unit symbol
+      (3) prefix symbol + base symbol
+      (4) prefix symbol + unit symbol
+      (5) prefixed base
+      (6) unprefixed base, e.g Gram
+      (7) base label
+      (8) unit label
+
+      (9) prefix label + base label   -- not implemented!
+     (10) prefix label + unit label   -- not implemented!
+
+    Returns:
+      uvec, prefactor
+
+    """
+
+    if len(sym) == 0: raise ValueError('Can not search empty symbol.')
+
+    # base symbol
+    if sym in Quantity.baseSymbol:
+      i = Quantity.baseSymbol.index(sym)
+      uvec = np.zeros(Quantity.dim)
+      uvec[i] = 1
+      return uvec, 1
+
+    # unit symbol
+    if sym in Quantity.unitSymbol:
+      i = Quantity.unitSymbol.index(sym)
+      return Quantity.unitVec[i], 1
+
+    # prefix symbol + base symbol
+    if sym[0] in Quantity.prefixSymbol and len(sym) > 1 and sym[1:] in Quantity.baseSymbol:
+      i = Quantity.baseSymbol.index(sym)
+      j = Quantity.prefixSymbol.index(sym[0])
+      uvec = np.zeros(Quantity.dim)
+      uvec[i] = 1
+      return uvec, Quantity.prefixFactor[j]
+
+    # prefix symbol + unit symbol
+    if sym[0] in Quantity.prefixSymbol and len(sym) > 1 and sym[1:] in Quantity.unitSymbol:
+      i = Quantity.unitSymbol.index(sym[1:])
+      j = Quantity.prefixSymbol.index(sym[0])
+      return Quantity.unitVec[i], Quantity.prefixFactor[j]
+
+    # prefixed base (e.g. Mg  for mega gram)
+    if len(sym) > 1 and sym[1:] in Quantity.baseUnprefixed:
+      i          = Quantity.baseUnprefixed.index(sym[1:])
+      basePrefix = Quantity.baseSymbol[i][0]
+      thisPrefix = sym[0]
+      if basePrefix not in Quantity.prefixSymbol: 
+        raise ValueError('Base unit {} has an unknown prefix.'.format(Quantity.baseSymbol[i]))
+      basePrefix = Quantity.prefixSymbol.index(basePrefix)
+      thisPrefix = Quantity.prefixSymbol.index(thisPrefix)
+      basePrefix = Quantity.prefixFactor[basePrefix]
+      thisPrefix = Quantity.prefixFactor[thisPrefix]
+
+      uvec = np.zeros(Quantity.dim)
+      uvec[i] = 1
+      return uvec, thisPrefix / basePrefix
+
+    # (6) unprefixed base (e.g. g for gram)
+    if sym in Quantity.baseUnprefixed:
+      i          = Quantity.baseUnprefixed.index(sym)
+      basePrefix = Quantity.baseSymbol[i][0]
+      if basePrefix not in Quantity.prefixSymbol: 
+        raise ValueError('Base unit {} has an unknown prefix.'.format(Quantity.baseSymbol[i]))
+      basePrefix = Quantity.prefixSymbol.index(basePrefix)
+      basePrefix = Quantity.prefixFactor[basePrefix]
+
+      uvec = np.zeros(Quantity.dim)
+      uvec[i] = 1
+      return uvec, 1 / basePrefix
+
+    # base Label
+    if sym in Quantity.baseLabel:
+      i = Quantity.baseLabel.index(sym)
+      uvec = np.zeros(Quantity.dim)
+      uvec[i] = 1
+      return uvec, 1
+
+    if sym in Quantity.unitLabel:
+    # unit Label
+      i = Quantity.unitLabel.index(sym)
+      return Quantity.unitVec[i], 1
+
+    raise ValueError('Unit {} not found.'.format(sym))
+
 
   class Iter(object):
     """

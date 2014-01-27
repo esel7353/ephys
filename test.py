@@ -31,6 +31,16 @@
 # THE SOFTWARE.
 ################################################################################
 
+"""
+This file should contain all test to 'ensure' that this module is bug-free :)
+Please forgive me that this file is rather long and  hardly contains any
+comments. But hey, I was not that lazy, I wrote tests...
+"""
+
+################################################################################
+# Test data.py                                                                 #
+################################################################################
+
 from data import Quantity
 import math
 import data
@@ -43,6 +53,9 @@ class Misc(unittest.TestCase):
     self.assertEqual(data.enumstr('s_', 4, 9, 2), ['s_4', 's_6', 's_8']  )
 
 class QuantityScalerTest(unittest.TestCase):
+
+  ################################################################################
+  # setup and asserts
 
   def assertNumpy(self, a, b):
     self.assertTrue( (a==b).all() )
@@ -83,6 +96,10 @@ class QuantityScalerTest(unittest.TestCase):
 
     ms  = data.enumstr('s', 100)
 
+
+  ################################################################################
+  # general tests
+
   def test_independence(self):
     Quantity.participantsAreIndepended = False
     # only add and mul are tested
@@ -114,6 +131,17 @@ class QuantityScalerTest(unittest.TestCase):
     mul(x, y)
     add(x, y)
 
+  def test_parseUnitString(self):
+    # TODO
+    pass
+
+  def test_searchUnit(self):
+    # TODO
+    pass
+
+
+  ################################################################################
+  # single valued tests
   
   def test_init(self):
     # value and error
@@ -539,6 +567,9 @@ class QuantityScalerTest(unittest.TestCase):
 
 
 
+  ################################################################################
+  # multi valued tests
+
   def test_init_multi(self):
     # value and error
     self.assertQuantity(Quantity(self.x), self.x, 0)
@@ -883,6 +914,7 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertQuantity(data.exp(Quantity((1,4), (2,2))), (math.e, math.e**4), (2 * math.e,2*math.e**4))
     self.assertQuantity(data.log(Quantity((1,4), (2,2))), (0, math.log(4)), (2,1/2))
 
-
+################################################################################
+# end
 if __name__ == '__main__':
   unittest.main()
