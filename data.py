@@ -1229,14 +1229,14 @@ class Quantity(object):
 
     This class is only used internally!
     """
-    def __init__(self, symbol, uvec, exponent=1, prefix=1):
+    def __init__(self, prefix, symbol, exponent, prefactor, uvec):
       """
       Constructor of UnitToken class.
       
       Parameters:
-        symbol    - The symbol as it appeared in the unit string. This means
-                    that if the unit is prefixed, the prefix is supposed to be
-                    included here.
+        symbol    - The symbol as it appeared in the unit string but without any
+                    prefix. This means that if the unit is prefixed, the prefix
+                    is supposed to be removed an passed to prefix instead.
 
         uvec      - This is the unit vector representing the unit, i.e. a list
                     or tuple of Quantity.dim length.
@@ -1245,13 +1245,24 @@ class Quantity(object):
                     part after the '^' character. This should be an integer.
                     Default: 1
 
-        prefix    - If the unit is prefixed, this must be its numerical
-                    prefactor regarding the unit vector. Default: 1
+        prefix    - The string prefix is one was present. The concatenation of
+                    symbol and prefix should always yield the string as it
+                    appeared in the unit string. 
+
+        prefactor - If the unit is prefixed, this must be its numerical
+                    prefactor regarding the unit vector. The value should also
+                    pay attention to the exponent! For example: when this
+                    represents cm^2, the correct prefactor is 1/100^2
+                    
       """
       self.symbol = symbol
       self.uvec = uvec
       self.exponent = exponent
       self.prefix = prefix
+      self.prefactor = prefactor
+
+    def __repr__(self):
+      return '<Unit: {}`{}^{:+1.1f} | {:1.1} * {} >'.format(self.prefix or '_', self.symbol, self.exponent, self.prefactor, self.uvec)
                     
   class _VaerToken(object):
     """
@@ -1272,6 +1283,10 @@ class Quantity(object):
       self.value = value
       self.error = error
 
+    def __repr__(self):
+      return '<Vaer: {} +- {} >'.format(self.value, self.error)
+
+
   def _parseUnitString(s):
     """
     This method is supposed to transform a given unit string into a list or a
@@ -1286,13 +1301,12 @@ class Quantity(object):
       - the syntax of a value/error token is: [-]number[+-number]
       - two tokens must be separated by either * or / or a white space
       - If the separator is a slash, ALL subsequent tokens' exponents will be
-        multiplied by -1. If there is more then one slash, the exponents will be
-        multiplied by (-1)^number of slash.
-        for example: m / s / J is equal to m * J / s
+        multiplied by -1 until the next * separator is read.
+        for example: m / s  J * kg is equal to m * kg / s / J
       - BRACKETS OF ANY SHAPE ARE NOT PERMITTED! (This feature might be added
         in later versions.)
 
-    This method uses the method _seachUnit.
+    This method uses the method _searchUnit.
 
     Parameter:
       s - the string to be parsed
@@ -1308,17 +1322,17 @@ class Quantity(object):
 
     # building regular expression
     # The regular expression will not check if the units and prefixed are known.
-    rUnitToken = r'([a-zA-Z])+(\s*\^\s*(-?[0-9]+(\.[0-9]+)?))?'
+    rUnitToken = r'([a-zA-Z]+)(\s*\^\s*(-?[0-9]+(\.[0-9]+)?))?'
     rVaerToken = r'(-?[0-9]+(.[0-9]+)?)(\s*\+-\s*([0-9]+(.[0-9]+)?))?'
     rSeparator = r'\s*([\s*/])\s*'
     r          = '(({}|{})($|{}))*$'.format(rUnitToken, rVaerToken, rSeparator)
-    # the re above might match re which end with a separator. I think the
-    # one below supresses this.
+    # the re above might match expressions which end with a separator. I think the
+    # one below suppresses this and allows white spaces in the beginning and at
+    # the end.
     r          = '\s*(({}|{})(\s*$|{}(?!$)))*$'.format(rUnitToken, rVaerToken, rSeparator)
 
     # check overall format
     if not re.match(r, s): raise ValueError('Unit string is not properly formatted!')
-    return True
 
     # iterate over tokens
     for token in re.finditer('({}|{}|{})'.format(rUnitToken, rVaerToken, rSeparator), s):
@@ -1328,9 +1342,12 @@ class Quantity(object):
       m = re.match(rUnitToken, token)
       if m:
         sym = m.group(1)
-        exp = m.group(3)
+        exp = float(m.group(3) or 1)
+        if exp % 1: int(exp)
         # check if sym is valid unit
-        l.append(Quantity._UnitToken(m.group()))
+        prefix, symbol, prefactor, uvec = Quantity._searchUnit(sym)
+        t = Quantity._UnitToken(prefix, symbol, mode*exp, prefactor**(mode*exp), uvec)
+        l.append(t)
         continue
 
       # analyse value error token
@@ -1338,15 +1355,31 @@ class Quantity(object):
       if m:
         val = float(m.group(1))
         err = float(m.group(4) or 0)
+        if mode == -1:
+          # if the value/error is in the denominator, the value and error has to
+          # converted!
+          # Let a be the value and sa the error. The resulting quantity f can be
+          # calculated with f = c/a where c is the quantity before including
+          # this factor. The calculation later will assume, that there was a
+          # multiplication, say f = a' * c. This means we have to pretend that
+          # here was a multiplication. It is easy to see, that a' = 1/a. What
+          # about the error? The calculation later on will assume the formula:
+          # sf = a' * c * sqrt(sa'^2/a'^2 + sc^2/c^2). To maintain this
+          # relation, it is necessary that sa' = sa/a^2.
+          err = err/val**2
+          val = 1/val
         l.append(Quantity._VaerToken(val, err))
         continue
 
       # analyse separator
       m = re.match(rSeparator, token)
       if m:
-        if m.group(1) == '/': mode *= -1
+        if m.group(1) == '/': mode = -1
+        if m.group(1) == '*': mode = +1
 
-  def _seachUnit(sym):
+    return l
+
+  def _searchUnit(sym):
     """
     TODO
 
@@ -1364,7 +1397,7 @@ class Quantity(object):
      (10) prefix label + unit label   -- not implemented!
 
     Returns:
-      uvec, prefactor
+      uvec, prefactor, prefix, symbol
 
     """
 
@@ -1375,26 +1408,31 @@ class Quantity(object):
       i = Quantity.baseSymbol.index(sym)
       uvec = np.zeros(Quantity.dim)
       uvec[i] = 1
-      return uvec, 1
+      prefix = ''
+      if len(sym) > 1 and sym[1:] in Quantity.baseUnprefixed:
+        prefix = sym[0]
+        sym = sym[1:]
+
+      return prefix, sym, 1, uvec
 
     # unit symbol
     if sym in Quantity.unitSymbol:
       i = Quantity.unitSymbol.index(sym)
-      return Quantity.unitVec[i], 1
+      return '', sym, Quantity.unitFactor[i], Quantity.unitVec[i]
 
     # prefix symbol + base symbol
     if sym[0] in Quantity.prefixSymbol and len(sym) > 1 and sym[1:] in Quantity.baseSymbol:
-      i = Quantity.baseSymbol.index(sym)
+      i = Quantity.baseSymbol.index(sym[1:])
       j = Quantity.prefixSymbol.index(sym[0])
       uvec = np.zeros(Quantity.dim)
       uvec[i] = 1
-      return uvec, Quantity.prefixFactor[j]
+      return sym[0], sym[1:], Quantity.prefixFactor[j], uvec
 
     # prefix symbol + unit symbol
     if sym[0] in Quantity.prefixSymbol and len(sym) > 1 and sym[1:] in Quantity.unitSymbol:
       i = Quantity.unitSymbol.index(sym[1:])
       j = Quantity.prefixSymbol.index(sym[0])
-      return Quantity.unitVec[i], Quantity.prefixFactor[j]
+      return sym[0], sym[1:], Quantity.prefixFactor[j] * Quantity.unitFactor[i], Quantity.unitVec[i]
 
     # prefixed base (e.g. Mg  for mega gram)
     if len(sym) > 1 and sym[1:] in Quantity.baseUnprefixed:
@@ -1410,7 +1448,7 @@ class Quantity(object):
 
       uvec = np.zeros(Quantity.dim)
       uvec[i] = 1
-      return uvec, thisPrefix / basePrefix
+      return sym[0], sym[1:], thisPrefix / basePrefix, uvec
 
     # (6) unprefixed base (e.g. g for gram)
     if sym in Quantity.baseUnprefixed:
@@ -1423,19 +1461,25 @@ class Quantity(object):
 
       uvec = np.zeros(Quantity.dim)
       uvec[i] = 1
-      return uvec, 1 / basePrefix
+      return '', sym, 1 / basePrefix, uvec
 
     # base Label
     if sym in Quantity.baseLabel:
       i = Quantity.baseLabel.index(sym)
       uvec = np.zeros(Quantity.dim)
       uvec[i] = 1
-      return uvec, 1
+      sym = Quantity.baseSymbol[i]
+      prefix = ''
+      if len(sym) > 1 and sym[1:] in Quantity.baseUnprefixed:
+        prefix = sym[0]
+        sym = sym[1:]
+
+      return prefix, sym, 1, uvec
 
     if sym in Quantity.unitLabel:
     # unit Label
       i = Quantity.unitLabel.index(sym)
-      return Quantity.unitVec[i], 1
+      return '', Quantity.unitSymbol[i], Quantity.unitFactor[i], Quantity.unitVec[i]
 
     raise ValueError('Unit {} not found.'.format(sym))
 
@@ -1592,6 +1636,8 @@ Exa   = Quantity.addPrefix('Exa', 'E', 1e18)
 Zetta = Quantity.addPrefix('Zetta', 'Z', 1e21)
 Yotta = Quantity.addPrefix('Yotta', 'Y', 1e24)
 
+# to introduce a prefixed unit here makes no sense. I think is is not supported
+# anyway.
 Steradian         = Quantity.addUnit('Steradian', 'sr', Radian**2)
 Newton            = Quantity.addUnit('Newton', 'N', Kilogram * Meter / Second**2) 
 Joule             = Quantity.addUnit('Joule', 'J', Newton * Meter) 

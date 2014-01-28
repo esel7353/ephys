@@ -57,6 +57,17 @@ class QuantityScalerTest(unittest.TestCase):
   ################################################################################
   # setup and asserts
 
+  def assertUnitToken(self, a, prefix, symbol, exp, prefactor, uvec):
+    self.assertEqual(a.symbol, symbol)
+    self.assertNumpy(a.uvec, uvec)
+    self.assertEqual(a.exponent, exp)
+    self.assertEqual(a.prefix, prefix)
+    self.assertAlmostEqual(a.prefactor, prefactor)
+
+  def assertVaerToken(self, a, value, error):
+    self.assertAlmostEqual(a.value, value)
+    self.assertAlmostEqual(a.error, error)
+
   def assertNumpy(self, a, b):
     self.assertTrue( (a==b).all() )
   
@@ -78,6 +89,15 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertSequenceEqual(quantity.label, label)
     self.assertSequenceEqual(quantity.latex, latex)
   
+  def assertSearchUnit(self, su, prefix, symbol, prefactor, uvec):
+    sprefix, ssymbol, sprefactor, suvec = su
+
+    self.assertEqual(sprefactor, prefactor)
+    self.assertEqual(sprefix, prefix)
+    self.assertEqual(ssymbol, symbol)
+    self.assertNumpy(suvec, uvec)
+
+    
   def setUp(self):
     self.METER = [1] + [0]*7
     Quantity.yesIKnowTheDangersAndPromiseToBeCareful()
@@ -132,12 +152,63 @@ class QuantityScalerTest(unittest.TestCase):
     add(x, y)
 
   def test_parseUnitString(self):
+    METER  = self.METER
+    KILOG  = [0,0,1]+[0]*5
+    SEC    = [0,1,0]+[0]*5
+    WATT   = [2,-3,1]+[0]*5
+    JOULE  = [2,-2,1]+[0]*5
+    
+    v1, m2, kJ3, W, v2, v3, mg2  = Quantity._parseUnitString('5.3+-0.2 * m^2 / kJ^3 * W /5+- 1 * 6 mg^2')
+
+    self.assertVaerToken(v1, 5.3, 0.2)
+    self.assertUnitToken(m2, '', 'm', 2, 1, METER)
+    self.assertUnitToken(kJ3, 'k', 'J', -3, 1e-9, JOULE)
     # TODO
-    pass
+
+
+
 
   def test_searchUnit(self):
-    # TODO
-    pass
+    s = Quantity._searchUnit
+
+    METER  = self.METER
+    KILOG  = [0,0,1]+[0]*5
+    SEC    = [0,1,0]+[0]*5
+    NEWTON = [1,-2,1]+[0]*5
+    JOULE  = [2,-2,1]+[0]*5
+    
+    # (1) base symbol
+    self.assertSearchUnit(s('m'), '', 'm', 1, METER)
+    self.assertSearchUnit(s('kg'), 'k', 'g', 1, KILOG)
+
+    # (2) unit symbol
+    self.assertSearchUnit(s('N'), '', 'N', 1, NEWTON)
+    self.assertSearchUnit(s('J'), '', 'J', 1, JOULE)
+    self.assertSearchUnit(s('min'), '', 'min', 60, SEC)
+
+    # (3) prefix symbol + base symbol
+    self.assertSearchUnit(s('km'), 'k', 'm', 1000, METER)
+    self.assertSearchUnit(s('ms'), 'm', 's', 1e-3, SEC)
+
+    # (4) prefix symbol + unit symbol
+    self.assertSearchUnit(s('kJ'), 'k', 'J', 1000, JOULE)
+    self.assertSearchUnit(s('mN'), 'm', 'N', 1e-3, NEWTON)
+    self.assertSearchUnit(s('mmin'), 'm', 'min', 0.06, SEC)
+
+    # (5) prefixed base
+    self.assertSearchUnit(s('mg'), 'm', 'g', 1e-6, KILOG)
+    self.assertSearchUnit(s('Mg'), 'M', 'g', 1000, KILOG)
+
+    # (6) unprefixed base
+    self.assertSearchUnit(s('g'), '', 'g', 1e-3, KILOG)
+
+    # (7) base label
+    self.assertSearchUnit(s('Kilogram'), 'k', 'g', 1, KILOG)
+    self.assertSearchUnit(s('Second'), '', 's', 1, SEC)
+
+    # (8) unit label
+    self.assertSearchUnit(s('Joule'), '', 'J', 1, JOULE)
+    self.assertSearchUnit(s('Minute'), '', 'min', 60, SEC)
 
 
   ################################################################################
