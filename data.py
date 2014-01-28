@@ -1170,7 +1170,45 @@ class Quantity(object):
     return Quantity(value, variance=variance, unit=uvec)
 
 
-  def str(self): pass
+  def str(self, unit=None, subunit=None, scale=True, brackets=True, name=True):
+    # prefix to be added
+    #unit and subunit must be a quantity object
+
+    if unit is None: unit = Quantity()
+    if subunit is None: subunit = Quantity()
+
+    united = self / unit * subunit
+
+
+    # make unit str
+    over = []
+    under = []
+    for i in range(Quantity.dim):
+      if united.uvec[i] > 1:
+        over.append("{}^{} ".format(Quantity.baseSymbol[i], united.uvec[i]))
+      elif united.uvec[i] == 1:
+        over.append("{} ".format(Quantity.baseSymbol[i]))
+      elif united.uvec[i] < -1:
+        under.append("{}^{} ".format(Quantity.baseSymbol[i], -united.uvec[i]))
+      elif united.uvec[i] == -1:
+        under.append("{} ".format(Quantity.baseSymbol[i]))
+
+    if unit.symbol: over.append(unit.symbol)
+    if subunit.symbol: under.append(subunit.symbol)
+    
+    if len(over) and len(under):
+      sunit = " ".join(over) + " / " + " ".join(under)
+    elif len(over):
+      sunit = " ".join(over)
+    elif len(under):
+      sunit = "1 / " + " ".join(under)
+    else:
+      sunit = ''
+
+    return sunit
+    
+
+
   def latex(self): pass
   def store(self): pass
   def lexport(self): pass
