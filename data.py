@@ -1308,13 +1308,17 @@ class Quantity(object):
 
     # building regular expression
     # The regular expression will not check if the units and prefixed are known.
-    rUnitToken = r'([a-zA-Z])+(\s*\^\s*([0-9]+(\.[0-9]+)?))?'
-    rVaerToken = r'([0-9]+(.[0-9]+)?)(\s*\+-\s*([0-9]+(.[0-9]+)?))?'
+    rUnitToken = r'([a-zA-Z])+(\s*\^\s*(-?[0-9]+(\.[0-9]+)?))?'
+    rVaerToken = r'(-?[0-9]+(.[0-9]+)?)(\s*\+-\s*([0-9]+(.[0-9]+)?))?'
     rSeparator = r'\s*([\s*/])\s*'
     r          = '(({}|{})($|{}))*$'.format(rUnitToken, rVaerToken, rSeparator)
+    # the re above might match re which end with a separator. I think the
+    # one below supresses this.
+    r          = '\s*(({}|{})(\s*$|{}(?!$)))*$'.format(rUnitToken, rVaerToken, rSeparator)
 
     # check overall format
     if not re.match(r, s): raise ValueError('Unit string is not properly formatted!')
+    return True
 
     # iterate over tokens
     for token in re.finditer('({}|{}|{})'.format(rUnitToken, rVaerToken, rSeparator), s):
