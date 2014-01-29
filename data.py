@@ -474,6 +474,21 @@ class Quantity(object):
 
     elif isinstance(unit, str):
       # >>> Quantity(unit="m")
+      tokens = Quantity._parseUnitString(unit)
+      self.uvec = np.zeros(Quantity.dim, dtype='int8')
+      self.preferedUnit = []
+      for t in tokens:
+        if isinstance(t, Quantity._UnitToken):
+          self.preferedUnit.append(t)
+          self.variance *= t.prefactor**2
+          self.value    *= t.prefactor
+          self.uvec     += t.uvec
+        elif isinstance(t, Quantity._VaerToken):
+          self.variance = self.value**2 * t.stddev**2 + t.value**2 * self.variance
+          self.value   *= t.value
+
+
+      """
       tokens = re.split('[ *]', unit)
       self.uvec = np.zeros(Quantity.dim, dtype='int8')
       for t in tokens:
@@ -506,6 +521,8 @@ class Quantity(object):
         #  (9) prefix label + base label
         # (10) prefix label + unit label
         # (11) number
+
+
         if sym in Quantity.baseSymbol:
           # base symbol
           i = Quantity.baseSymbol.index(sym)
@@ -582,7 +599,8 @@ class Quantity(object):
               stddev = float(stddev)
               self.variance = self.value**2 * stddev**2 + value**2 * self.variance
               self.value *= value
-            else: raise ValueError('Unknown token in unit string: {}'.format(sym))
+            else: raise ValueError('Unknown token in unit string:
+            {}'.format(sym))"""
           
     elif isinstance(unit, collections.Iterable):
       # >>> Quantity(unit=(1,0,0,0,0,0,0,0,0))
@@ -1262,7 +1280,8 @@ class Quantity(object):
       self.prefactor = prefactor
 
     def __repr__(self):
-      return '<Unit: {}`{}^{:+1.1f} | {:1.1} * {} >'.format(self.prefix or '_', self.symbol, self.exponent, self.prefactor, self.uvec)
+      return '<Unit: {}`{}^{:+1.1f} | {:1.1f} * {} >'.format(self.prefix or '_',
+       self.symbol, float(self.exponent), self.prefactor, self.uvec)
                     
   class _VaerToken(object):
     """
@@ -1274,17 +1293,17 @@ class Quantity(object):
 
     This class is only used internally!
     """
-    def __init__(self, value, error):
+    def __init__(self, value, stddev):
       """
       Constructor of VaerToken class.
 
       Parameters: should be self explaining...
       """
       self.value = value
-      self.error = error
+      self.stddev = stddev
 
     def __repr__(self):
-      return '<Vaer: {} +- {} >'.format(self.value, self.error)
+      return '<Vaer: {} +- {} >'.format(self.value, self.stddev)
 
 
   def _parseUnitString(s):
@@ -1323,7 +1342,7 @@ class Quantity(object):
     # building regular expression
     # The regular expression will not check if the units and prefixed are known.
     rUnitToken = r'([a-zA-Z]+)(\s*\^\s*(-?[0-9]+(\.[0-9]+)?))?'
-    rVaerToken = r'(-?[0-9]+(.[0-9]+)?)(\s*\+-\s*([0-9]+(.[0-9]+)?))?'
+    rVaerToken = r'(-?[0-9]+(\.[0-9]*)?(e[-+]?[0-9]+)?)(\s*\+-\s*([0-9]+(\.[0-9]*)?(e[-+]?[0-9]+)?))?'
     rSeparator = r'\s*([\s*/])\s*'
     r          = '(({}|{})($|{}))*$'.format(rUnitToken, rVaerToken, rSeparator)
     # the re above might match expressions which end with a separator. I think the
@@ -1343,10 +1362,10 @@ class Quantity(object):
       if m:
         sym = m.group(1)
         exp = float(m.group(3) or 1)
-        if exp % 1: int(exp)
+        if exp % 1==0: exp = int(exp)
         # check if sym is valid unit
         prefix, symbol, prefactor, uvec = Quantity._searchUnit(sym)
-        t = Quantity._UnitToken(prefix, symbol, mode*exp, prefactor**(mode*exp), uvec)
+        t = Quantity._UnitToken(prefix, symbol, mode*exp, prefactor**(mode*exp), uvec*exp)
         l.append(t)
         continue
 
@@ -1354,7 +1373,7 @@ class Quantity(object):
       m = re.match(rVaerToken, token)
       if m:
         val = float(m.group(1))
-        err = float(m.group(4) or 0)
+        err = float(m.group(5) or 0)
         if mode == -1:
           # if the value/error is in the denominator, the value and error has to
           # converted!
@@ -1406,7 +1425,7 @@ class Quantity(object):
     # base symbol
     if sym in Quantity.baseSymbol:
       i = Quantity.baseSymbol.index(sym)
-      uvec = np.zeros(Quantity.dim)
+      uvec = np.zeros(Quantity.dim, dtype='int8')
       uvec[i] = 1
       prefix = ''
       if len(sym) > 1 and sym[1:] in Quantity.baseUnprefixed:
@@ -1424,7 +1443,7 @@ class Quantity(object):
     if sym[0] in Quantity.prefixSymbol and len(sym) > 1 and sym[1:] in Quantity.baseSymbol:
       i = Quantity.baseSymbol.index(sym[1:])
       j = Quantity.prefixSymbol.index(sym[0])
-      uvec = np.zeros(Quantity.dim)
+      uvec = np.zeros(Quantity.dim, dtype='int8')
       uvec[i] = 1
       return sym[0], sym[1:], Quantity.prefixFactor[j], uvec
 
@@ -1446,7 +1465,7 @@ class Quantity(object):
       basePrefix = Quantity.prefixFactor[basePrefix]
       thisPrefix = Quantity.prefixFactor[thisPrefix]
 
-      uvec = np.zeros(Quantity.dim)
+      uvec = np.zeros(Quantity.dim, dtype='int8')
       uvec[i] = 1
       return sym[0], sym[1:], thisPrefix / basePrefix, uvec
 
@@ -1459,14 +1478,14 @@ class Quantity(object):
       basePrefix = Quantity.prefixSymbol.index(basePrefix)
       basePrefix = Quantity.prefixFactor[basePrefix]
 
-      uvec = np.zeros(Quantity.dim)
+      uvec = np.zeros(Quantity.dim, dtype='int8')
       uvec[i] = 1
       return '', sym, 1 / basePrefix, uvec
 
     # base Label
     if sym in Quantity.baseLabel:
       i = Quantity.baseLabel.index(sym)
-      uvec = np.zeros(Quantity.dim)
+      uvec = np.zeros(Quantity.dim, dtype='int8')
       uvec[i] = 1
       sym = Quantity.baseSymbol[i]
       prefix = ''

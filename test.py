@@ -64,9 +64,9 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertEqual(a.prefix, prefix)
     self.assertAlmostEqual(a.prefactor, prefactor)
 
-  def assertVaerToken(self, a, value, error):
+  def assertVaerToken(self, a, value, stddev):
     self.assertAlmostEqual(a.value, value)
-    self.assertAlmostEqual(a.error, error)
+    self.assertAlmostEqual(a.stddev, stddev)
 
   def assertNumpy(self, a, b):
     self.assertTrue( (a==b).all() )
@@ -152,23 +152,23 @@ class QuantityScalerTest(unittest.TestCase):
     add(x, y)
 
   def test_parseUnitString(self):
-    METER  = self.METER
-    KILOG  = [0,0,1]+[0]*5
+    METER2 = [2,0,0]+[0]*5
+    KILOG2 = [0,0,2]+[0]*5
     SEC    = [0,1,0]+[0]*5
     WATT   = [2,-3,1]+[0]*5
-    JOULE  = [2,-2,1]+[0]*5
+    JOULE3 = [6,-6,3]+[0]*5
     S = Quantity._parseUnitString
 
     v1, m2, kJ3, s, W, v2, v3, mg2  = S('5.3+-0.2 * m^2 / kJ^3 s * W /5+- 1 * 6 mg^2')
 
     self.assertVaerToken(v1, 5.3, 0.2)
-    self.assertUnitToken(m2, '', 'm', 2, 1, METER)
-    self.assertUnitToken(kJ3, 'k', 'J', -3, 1e-9, JOULE)
+    self.assertUnitToken(m2, '', 'm', 2, 1, METER2)
+    self.assertUnitToken(kJ3, 'k', 'J', -3, 1e-9, JOULE3)
     self.assertUnitToken(s, '', 's', -1, 1, SEC)
     self.assertUnitToken(W, '', 'W', 1, 1, WATT)
     self.assertVaerToken(v2, 0.2, 0.04)
     self.assertVaerToken(v3, 6, 0)
-    self.assertUnitToken(mg2, 'm', 'g', 2, 1e-12, KILOG)
+    self.assertUnitToken(mg2, 'm', 'g', 2, 1e-12, KILOG2)
     # well, one should add more tests
 
     
