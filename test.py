@@ -157,16 +157,31 @@ class QuantityScalerTest(unittest.TestCase):
     SEC    = [0,1,0]+[0]*5
     WATT   = [2,-3,1]+[0]*5
     JOULE  = [2,-2,1]+[0]*5
-    
-    v1, m2, kJ3, W, v2, v3, mg2  = Quantity._parseUnitString('5.3+-0.2 * m^2 / kJ^3 * W /5+- 1 * 6 mg^2')
+    S = Quantity._parseUnitString
+
+    v1, m2, kJ3, s, W, v2, v3, mg2  = S('5.3+-0.2 * m^2 / kJ^3 s * W /5+- 1 * 6 mg^2')
 
     self.assertVaerToken(v1, 5.3, 0.2)
     self.assertUnitToken(m2, '', 'm', 2, 1, METER)
     self.assertUnitToken(kJ3, 'k', 'J', -3, 1e-9, JOULE)
-    # TODO
+    self.assertUnitToken(s, '', 's', -1, 1, SEC)
+    self.assertUnitToken(W, '', 'W', 1, 1, WATT)
+    self.assertVaerToken(v2, 0.2, 0.04)
+    self.assertVaerToken(v3, 6, 0)
+    self.assertUnitToken(mg2, 'm', 'g', 2, 1e-12, KILOG)
+    # well, one should add more tests
 
-
-
+    
+    self.assertRaises(ValueError, S, '*')
+    self.assertRaises(ValueError, S, '5-+1')
+    self.assertRaises(ValueError, S, '5+-')
+    self.assertRaises(ValueError, S, '(m)^2')
+    self.assertRaises(ValueError, S, 'm^2s')
+    self.assertRaises(ValueError, S, 'm^2 * ')
+    self.assertRaises(ValueError, S, 'm^2 */ m')
+    self.assertRaises(ValueError, S, 'notaunit')
+    self.assertRaises(ValueError, S, '7^3')
+    self.assertRaises(ValueError, S, '/m')
 
   def test_searchUnit(self):
     s = Quantity._searchUnit
