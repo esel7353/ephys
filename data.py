@@ -476,10 +476,10 @@ class Quantity(object):
       # >>> Quantity(unit="m")
       tokens = Quantity._parseUnitString(unit)
       self.uvec = np.zeros(Quantity.dim, dtype='int8')
-      self.preferedUnit = []
+      self.preferredUnit = []
       for t in tokens:
         if isinstance(t, Quantity._UnitToken):
-          self.preferedUnit.append(t)
+          self.preferredUnit.append(t)
           self.variance *= t.prefactor**2
           self.value    *= t.prefactor
           self.uvec     += t.uvec
@@ -1081,15 +1081,28 @@ class Quantity(object):
     return Quantity(value, variance=variance, unit=uvec)
 
 
-  def str(self, unit=None, subunit=None, scale=True, brackets=True, name=True):
-    # prefix to be added
-    #unit and subunit must be a quantity object
+  def str(self, unit="-self preferred-", scale=True, brackets=True, name=True):
+    """
+    unit specification must be a string parsable by parserUnitString.
 
-    if unit is None: unit = Quantity()
-    if subunit is None: subunit = Quantity()
+    """
+    if unit == '-self preffered-': unit = self.preferredUnit
 
-    united = self / unit * subunit
+    token = Quantity._parseUnitString(unit)
+    prefactor = 1
+    uvec      = np.zeros(Quantity.dim, dtype='int8')
+    for t in token:
+      if isinstance(t, VaerToken):
+        raise ValueError("Unit specification must not contain a ValueToken.")
+      assert isinstance(t, Quantity._UnitToken)
+      prefactor *= t.prefactor
+      uvec      += t.uvec
+  
+    if (self.uvec != uvec ).any():
+      # TODO
 
+
+    
 
     # make unit str
     over = []
