@@ -37,6 +37,9 @@ import scipy.misc as sm
 import scipy.constants as sc
 import collections
 
+SELF_PREFERRED = '--this should always fail when parsed--'
+
+
 ################################################################################
 # Classes
 
@@ -67,7 +70,7 @@ class Quantity(object):
   The units are represented as products of powers of the SI base
   units. Internally the exponents are stored as vectors. This guarantees the
   unit calculation.
-  >>> (Watt / Volt).sunit()
+  >>> (Watt / Volt).siunit()
   'A'
 
   Using numpy arrays this data type can be used to represent whole data
@@ -277,6 +280,15 @@ class Quantity(object):
       A named Quantity object with value 1 and no standard deviation.
     """
 
+    if True:
+      if symbol in Quantity.unitSymbol:
+        print('Can not add {} to unit base. 1'.format(symbol))
+      if len(symbol) > 1 and symbol[0] in Quantity.prefixSymbol and symbol[1:] in Quantity.unitSymbol:
+        print('Can not add {} to unit base. 2'.format(symbol))
+      for p in Quantity.prefixSymbol:
+        if p + symbol in Quantity.unitSymbol:
+          print('Can not add {} to unit base. 3'.format(symbol))
+          
     Quantity.unitLabel.append(label)
     Quantity.unitSymbol.append(symbol)
     Quantity.unitLatex.append(latex)
@@ -416,6 +428,7 @@ class Quantity(object):
 
     ########
     # name quantity
+    self.preferredUnit = []
     if isinstance(symbol, str): self.symbol = symbol
     else:                       self.symbol = list(symbol)
 
@@ -476,7 +489,6 @@ class Quantity(object):
       # >>> Quantity(unit="m")
       tokens = Quantity._parseUnitString(unit)
       self.uvec = np.zeros(Quantity.dim, dtype='int8')
-      self.preferredUnit = []
       for t in tokens:
         if isinstance(t, Quantity._UnitToken):
           self.preferredUnit.append(t)
@@ -580,7 +592,7 @@ class Quantity(object):
       # >>> x + y
       self.check(other)
       if ((self.uvec != other.uvec) * Quantity.basePersistant).any():  
-        raise IncompatibleUnits('Can not sum {} and {}.'.format(self.sunit(), other.sunit()))
+        raise IncompatibleUnits('Can not sum {} and {}.'.format(self.siunit(), other.siunit()))
       value  = self.value + other.value
       # Gaussian error propagation  [2]
       variance = self.variance + other.variance
@@ -600,7 +612,7 @@ class Quantity(object):
       # >>> x - y
       self.check(other)
       if ((self.uvec != other.uvec) * Quantity.basePersistant).any():  
-        raise IncompatibleUnits('Can not subtract {} from {}.'.format(other.sunit(), self.sunit()))
+        raise IncompatibleUnits('Can not subtract {} from {}.'.format(other.siunit(), self.siunit()))
       value  = self.value - other.value
       # Gaussian error propagation  [2]
       variance = self.variance + other.variance
@@ -658,7 +670,7 @@ class Quantity(object):
       self.check(other)
       b=other.value
       if not other.unitless(): 
-        raise IncompatibleUnits('Can not calculate the "{}-th power"!'.format(other.sunit()))
+        raise IncompatibleUnits('Can not calculate the "{}-th power"!'.format(other.siunit()))
       if isinstance(b, np.ndarray) and not self.unitless():
         raise IncompatibleUnits('Can only raise to the numpy-array-power, if the raised value is unitless.')
       value     = a**b
@@ -706,7 +718,7 @@ class Quantity(object):
       try:
         return self + Quantity(0, stddev=other.value, unit=other.uvec, label=self.label, symbol=self.symbol, latex=self.latex)
       except IncompatibleUnits:
-        raise IncompatibleUnits('Can not add absolute error given in {} for a quantity measured in {}.'.format(other.sunit(), self.sunit()))
+        raise IncompatibleUnits('Can not add absolute error given in {} for a quantity measured in {}.'.format(other.siunit(), self.siunit()))
 
     elif isinstance(other, (int, float, collections.Iterable)):
       # >>> x | 0.4
@@ -771,6 +783,7 @@ class Quantity(object):
 
   def __str__(self): 
     """
+    REDO
     Returns a string representation  of the quantity.  Value and standard
     deviation is printed with full precision. For more physical output see
     Quantity.str and Quantity.latex.  If the quantity has a symbol (or a label,
@@ -782,6 +795,9 @@ class Quantity(object):
       3.183098861837907 +- 0.6366197723675814 m^2 s^-2 kg
       U = 3.6787944117144233 +- 0.7357588823428847 m^2 s^-3 kg A^-1
       Current: 8.154845485377136 +- 1.103638323514327 A
+    """
+
+    return self.str()
     """
     if len(self) == 1 or 1:
       if self.symbol:
@@ -800,9 +816,10 @@ class Quantity(object):
           naming = self.label + ': '
       else:
         naming = ''
-      return "{}{} +- {} {}".format(naming, self.value, self.stddev(), self.sunit())
+      return "{}{} +- {} {}".format(naming, self.value, self.stddev(), self.siunit())
     else:
       raise Exception('Multi-valued str() not yet implemented')
+    """
 
   def stddev(self):
     """
@@ -812,7 +829,7 @@ class Quantity(object):
     """
     return np.sqrt(self.variance)
 
-  def sunit(self):
+  def siunit(self):
     """
     Resurns a string prepresenation of its unit. The
     representations is a product of powers of the base
@@ -822,13 +839,15 @@ class Quantity(object):
       m^2 s^-3 kg A^-1  for Volt
       A                 for Ampere
     """ 
-    rep = ""
+    over = []
+    under = []
     for b, p in zip(Quantity.baseSymbol, self.uvec):
-      if p != 0:  # include only non-zero powers
-        rep += b
-        if p != 1: rep += "^" + str(p)  # include '^x' only if x is not one
-        rep += " "
-    return rep[:-1]  
+      if p > 0:
+        over.append(b + ('^'+str(p) if p>1 else ''))
+      if p < 0:
+        under.append(b + ('^'+str(-p) if p<-1 else ''))
+    if len(over) == 0 and len(under) != 0: over.append('1')
+    return ' '.join(over) + (' / ' + ' '.join(under) if len(under)>0 else '')
 
   def __repr__(self): 
     """
@@ -844,7 +863,7 @@ class Quantity(object):
     if self.latex: naming += ", latex=" + repr(self.latex)
 
     if self.uvec.any():
-      return 'Quantity({}, {}, {}{})'.format(repr(self.value), repr(self.stddev()), repr(self.sunit()), naming)
+      return 'Quantity({}, {}, {}{})'.format(repr(self.value), repr(self.stddev()), repr(self.siunit()), naming)
     else:
       return 'Quantity({}, {}{})'.format(repr(self.value), repr(self.stddev()), naming)
 
@@ -944,7 +963,7 @@ class Quantity(object):
 
     if isinstance(other, Quantity):
       if ((self.uvec != other.uvec) * Quantity.basePersistant).any():  
-        raise IncompatibleUnits('Can not assign item/slice measured in {} to a quantity measured in {}.'.format(other.sunit(), self.sunit()))
+        raise IncompatibleUnits('Can not assign item/slice measured in {} to a quantity measured in {}.'.format(other.siunit(), self.siunit()))
 
       l = len(self)  # as a side effect checks for consistent lengths
       ## single valued case
@@ -1080,57 +1099,58 @@ class Quantity(object):
 
     return Quantity(value, variance=variance, unit=uvec)
 
+  def pu(self, s):
+    self.preferredUnit = Quantity._parseUnitString(s)
+# TODO: check for vaer in pus
+    return self
 
-  def str(self, unit="-self preferred-", scale=True, brackets=True, name=True):
+  def str(self, unit=SELF_PREFERRED, scale=True, brackets=True, name=True, reasonable=True):
     """
     unit specification must be a string parsable by parserUnitString.
-
     """
-    if unit == '-self preffered-': unit = self.preferredUnit
+    if unit == SELF_PREFERRED: 
+      token = self.preferredUnit
+    else:
+      token = Quantity._parseUnitString(unit)
 
-    token = Quantity._parseUnitString(unit)
     prefactor = 1
     uvec      = np.zeros(Quantity.dim, dtype='int8')
     for t in token:
-      if isinstance(t, VaerToken):
+      if isinstance(t, Quantity._VaerToken):
         raise ValueError("Unit specification must not contain a ValueToken.")
       assert isinstance(t, Quantity._UnitToken)
       prefactor *= t.prefactor
       uvec      += t.uvec
   
-    if (self.uvec != uvec ).any():
-      # TODO
-
-
-    
+    if (self.uvec != uvec).any():
+      extra = Quantity(unit=self.uvec-uvec).siunit()
+      extra = Quantity._parseUnitString(extra)
+      token.extend(extra)
 
     # make unit str
     over = []
     under = []
-    for i in range(Quantity.dim):
-      if united.uvec[i] > 1:
-        over.append("{}^{} ".format(Quantity.baseSymbol[i], united.uvec[i]))
-      elif united.uvec[i] == 1:
-        over.append("{} ".format(Quantity.baseSymbol[i]))
-      elif united.uvec[i] < -1:
-        under.append("{}^{} ".format(Quantity.baseSymbol[i], -united.uvec[i]))
-      elif united.uvec[i] == -1:
-        under.append("{} ".format(Quantity.baseSymbol[i]))
+    for t in token:
+      p = t.exponent
+      b = t.prefix + t.symbol
+      if p > 0:
+        over.append(b + ('^'+str(p) if p>1 else ''))
+      if p < 0:
+        under.append(b + ('^'+str(-p) if p<-1 else ''))
+    pUnit = ' '.join(over) + (' / ' + ' '.join(under) if len(under)>0 else '')
 
-    if unit.symbol: over.append(unit.symbol)
-    if subunit.symbol: under.append(subunit.symbol)
-    
-    if len(over) and len(under):
-      sunit = " ".join(over) + " / " + " ".join(under)
-    elif len(over):
-      sunit = " ".join(over)
-    elif len(under):
-      sunit = "1 / " + " ".join(under)
-    else:
-      sunit = ''
+    if name:
+      if self.symbol != '': 
+        if isinstance(self.symbol, (list,tuple)): name = '[' + ', '.join(self.symbol) + '] = '
+        else: name = self.symbol + ' = '
+      elif self.label != '':
+        if isinstance(self.label, (list, tuple)): name = '[' + ', '.join(self.label) + ']: ' 
+        else: name = self.label + ': '
+      else: name = ''
+    else: name = ''
 
-    return sunit
-    
+    return "{}{} +- {} {}".format(name, self.value / prefactor, self.stddev() / prefactor, pUnit)
+
 
 
   def latex(self): pass
@@ -1263,7 +1283,7 @@ class Quantity(object):
         if exp % 1==0: exp = int(exp)
         # check if sym is valid unit
         prefix, symbol, prefactor, uvec = Quantity._searchUnit(sym)
-        t = Quantity._UnitToken(prefix, symbol, mode*exp, prefactor**(mode*exp), uvec*exp)
+        t = Quantity._UnitToken(prefix, symbol, mode*exp, prefactor**(mode*exp), uvec*exp*mode)
         l.append(t)
         continue
 
@@ -1285,6 +1305,7 @@ class Quantity(object):
           # relation, it is necessary that sa' = sa/a^2.
           err = err/val**2
           val = 1/val
+        if val == 1 and err ==0: continue
         l.append(Quantity._VaerToken(val, err))
         continue
 

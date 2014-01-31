@@ -154,9 +154,9 @@ class QuantityScalerTest(unittest.TestCase):
   def test_parseUnitString(self):
     METER2 = [2,0,0]+[0]*5
     KILOG2 = [0,0,2]+[0]*5
-    SEC    = [0,1,0]+[0]*5
+    SEC    = [0,-1,0]+[0]*5
     WATT   = [2,-3,1]+[0]*5
-    JOULE3 = [6,-6,3]+[0]*5
+    JOULE3 = [-6,6,-3]+[0]*5
     S = Quantity._parseUnitString
 
     v1, m2, kJ3, s, W, v2, v3, mg2  = S('5.3+-0.2 * m^2 / kJ^3 s * W /5+- 1 * 6 mg^2')
@@ -169,6 +169,7 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertVaerToken(v2, 0.2, 0.04)
     self.assertVaerToken(v3, 6, 0)
     self.assertUnitToken(mg2, 'm', 'g', 2, 1e-12, KILOG2)
+
     # well, one should add more tests
 
     
@@ -182,6 +183,7 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertRaises(ValueError, S, 'notaunit')
     self.assertRaises(ValueError, S, '7^3')
     self.assertRaises(ValueError, S, '/m')
+    self.assertRaises(ValueError, S, data.SELF_PREFERRED)
 
   def test_searchUnit(self):
     s = Quantity._searchUnit
@@ -490,7 +492,7 @@ class QuantityScalerTest(unittest.TestCase):
 
   def test_buildinStr(self):
     self.assertEqual(str(Quantity(3.1, 1.1, 'm')), '3.1 +- 1.1 m')
-    self.assertEqual(str(Quantity(3.1, 1.1, 'J')), '3.1 +- 1.1 m^2 s^-2 kg')
+    self.assertEqual(str(Quantity(3.1, 1.1)*data.Joule), '3.1 +- 1.1 m^2 kg / s^2')
     self.assertEqual(str(Quantity(3.1, 1.1, 'm', symbol='a')), 'a = 3.1 +- 1.1 m')
     self.assertEqual(str(Quantity(3.1, 1.1, 'm', label='Ab')), 'Ab: 3.1 +- 1.1 m')
     self.assertEqual(str(Quantity(3.1, 1.1, 'm', symbol='a', label='Ab')), 'a = 3.1 +- 1.1 m')
@@ -500,12 +502,13 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertAlmostEqual(Quantity(3, 2).stddev(), 2)
     self.assertAlmostEqual(Quantity(3, 3, 'm').stddev(), 3)
 
-  def test_sunit(self):
-    self.assertEqual(data.Meter.sunit(), 'm')
-    self.assertEqual(data.Volt.sunit(), 'm^2 s^-3 kg A^-1')
-    self.assertEqual(data.Joule.sunit(), 'm^2 s^-2 kg')
-    self.assertEqual(data.Radian.sunit(), 'rad')
-    self.assertEqual(Quantity().sunit(), '')
+  def test_siunit(self):
+    self.assertEqual(data.Meter.siunit(), 'm')
+    self.assertEqual(data.Volt.siunit(), 'm^2 kg / s^3 A')
+    self.assertEqual(data.Joule.siunit(), 'm^2 kg / s^2')
+    self.assertEqual(data.Radian.siunit(), 'rad')
+    self.assertEqual(Quantity().siunit(), '')
+    self.assertEqual(Quantity('s^-1').siunit(), '1 / s')
 
   def test_repr(self):
     x = Quantity(42, 1, 'm', latex='f')
@@ -903,7 +906,7 @@ class QuantityScalerTest(unittest.TestCase):
     self.assertTrue(np.allclose(Quantity(s, sx, 'm').stddev(), sx))
 
   def test_sunit_multi(self):
-    self.assertEqual(Quantity(self.x, self.sx, 'km').sunit(), 'm')
+    self.assertEqual(Quantity(self.x, self.sx, 'km').siunit(), 'm')
 
   def test_repr_multi(self):
     from numpy import array
