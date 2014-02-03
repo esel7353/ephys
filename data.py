@@ -1100,14 +1100,25 @@ class Quantity(object):
     return Quantity(value, variance=variance, unit=uvec)
 
   def pu(self, s):
-    self.preferredUnit = Quantity._parseUnitString(s)
-# TODO: check for vaer in pus
+    """
+    Sets the preferred unit of this quantity. The parameter must be parsable by
+    Quantity._parseUnitString.
+    The method returns self, so a cascade can but build.
+    """
+    unit = Quantity._parseUnitString(s)
+    for u in unit:
+      if isinstance(u, Vaer): raise ValueError('Preferred unit string must not contain value/error tokens.')
+
+    self.preferredUnit = u
     return self
 
-  def str(self, unit=SELF_PREFERRED, scale=True, brackets=True, name=True, reasonable=True):
+  def str(self, unit=SELF_PREFERRED, scale=True, brackets=True, name=True, reasonable=True, prefix=True):
     """
     unit specification must be a string parsable by parserUnitString.
+    if scale is False, value of prefix parameter will be ignored.
     """
+    ######################################################################
+    # make unit list
     if unit == SELF_PREFERRED: 
       token = self.preferredUnit
     else:
@@ -1126,7 +1137,56 @@ class Quantity(object):
       extra = Quantity(unit=self.uvec-uvec).siunit()
       extra = Quantity._parseUnitString(extra)
       token.extend(extra)
+  
+    ######################################################################
+    # make numbers
+    def scales(value, error):
+      sv = math.floor(math.log10(math.abs(value)))
+      se = math.floor(math.log10(math.abs(error)))
+      # if first significant digit is a 1
+      if error / 10**serror < 2.0: se-= 1
 
+      return sv, se
+
+    value = self.value * prefactor
+    error = self.stddev() * prefactor
+    
+    # rules for number making:
+    #  - error must not be less than 0.001
+    #  - error should have as less digits as possible
+    #  - value should be between 1 and 10,000
+    #     => value/error > 10^6: error=0.00x
+
+    if reasonable:
+      sv, se = scales(value, error)
+      error = math.round(error, -serror)
+      value = math.round(value, -sValue)
+
+    if scale:
+      sv, se = scales(value, error)
+
+      ####################################
+      # determine scale value
+      if sv - se >= 6:
+        # in this case, all hope is lost. There is no nice way to print this
+        # scale error as small as possible (> 0.001) 
+        if not prefix:
+          scale = -3 - se
+        else:
+          #here a lot of testing has to be done...
+      elif sv - se >= 4:
+        #
+
+
+
+
+
+
+
+
+    
+
+    ######################################################################
     # make unit str
     over = []
     under = []
@@ -1139,6 +1199,8 @@ class Quantity(object):
         under.append(b + ('^'+str(-p) if p<-1 else ''))
     pUnit = ' '.join(over) + (' / ' + ' '.join(under) if len(under)>0 else '')
 
+    ######################################################################
+    # make naming
     if name:
       if self.symbol != '': 
         if isinstance(self.symbol, (list,tuple)): name = '[' + ', '.join(self.symbol) + '] = '
@@ -1149,6 +1211,8 @@ class Quantity(object):
       else: name = ''
     else: name = ''
 
+    ######################################################################
+    # return
     return "{}{} +- {} {}".format(name, self.value / prefactor, self.stddev() / prefactor, pUnit)
 
 
@@ -1319,7 +1383,7 @@ class Quantity(object):
 
   def _searchUnit(sym):
     """
-    TODO
+    TODO 
 
     Search Hierarchy:
       (1) base symbol
