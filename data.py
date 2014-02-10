@@ -1112,7 +1112,48 @@ class Quantity(object):
     self.preferredUnit = u
     return self
 
-  def str(self, unit=SELF_PREFERRED, scale=True, brackets=True, name=True, reasonable=True, prefix=True):
+  def isaMagnitude(value, error):
+    sv = math.floor(math.log10(abs(value))) if value else None
+    se = math.floor(math.log10(abs(error))) if error else None
+    # if first significant digit is a 1
+    if error * 10**-se< 2.0: se-= 1
+
+    return sv, se
+
+  def isaPenalty(self, value, error, ulist, svec):
+    """
+    This function should be minimized.
+    """
+    sv, se = isaMagnitude(value, error)
+
+    # TODO
+
+
+    return V + E + U
+
+  def isaScaleFactor(self, svec, ulist):
+    """
+    General:
+      v+-e 10^s_0 Π (10^s_i p_i u_i)^e_i
+     
+      v and e - are value and error
+      s_0     - preunit scale exponent
+      s_i     - unit scale exponents
+      p_i     - the prefixes of the preferred unit
+      u_i     - the preferred units
+      e_i     - the exponents of the preferred unit
+     
+      10^s_i p_i will be combined to the new prefix
+    """
+    if len(svec) - 1 != len(ulist):
+      raise ValueError('Number of unit scale exponents does not match the number of unit list items.')
+    if len(svec) == 0:
+      raise ValueError('There must be at least the PREunit scale exponent.')
+
+    return 10**(-svec[0]-sum([s * u.exponent for s, u in zip(svec[1:], ulist)])
+
+
+  def str(self, unit=SELF_PREFERRED, scale=True, brackets=True, name=True, reasonable=True, prefix=True, times=False):
     """
     unit specification must be a string parsable by parserUnitString.
     if scale is False, value of prefix parameter will be ignored.
@@ -1140,16 +1181,9 @@ class Quantity(object):
   
     ######################################################################
     # make numbers
-    def scales(value, error):
-      sv = math.floor(math.log10(math.abs(value)))
-      se = math.floor(math.log10(math.abs(error)))
-      # if first significant digit is a 1
-      if error / 10**serror < 2.0: se-= 1
 
-      return sv, se
-
-    value = self.value * prefactor
-    error = self.stddev() * prefactor
+    value = self.value / prefactor
+    error = self.stddev() / prefactor
     
     # rules for number making:
     #  - error must not be less than 0.001
@@ -1159,32 +1193,44 @@ class Quantity(object):
 
     if reasonable:
       sv, se = scales(value, error)
-      error = math.round(error, -serror)
-      value = math.round(value, -sValue)
+      error = round(error, -se)
+      value = round(value, -se)
 
+    ssmult = ''
+    prefix = False
     if scale:
       sv, se = scales(value, error)
 
-      ####################################
+    """  ####################################
       # determine scale value
       if sv - se >= 6:
         # in this case, all hope is lost. There is no nice way to print this
         # scale error as small as possible (> 0.001) 
         if not prefix:
-          scale = -3 - se
+          scale = 3 + se
+          digits = 3
         else:
           #here a lot of testing has to be done...
+          pass
       elif sv - se >= 4:
-        #
+        if not prefix:
+          scale = -3 + sv
+          digits = sv - se - 3
+        else:
+          #here a lot of testing has to be done...
+          pass
+      else:
+        if not prefix:
+          scale = se
+          digits = 0
+        else:
+          #here a lot of testing has to be done...
+          pass
 
-
-
-
-
-
-
-
-    
+      ssmult = '10^{:.0f}'.format(scale) # string scale multiplicator
+      value *= 10**-scale
+      error *= 10**-scale
+      """
 
     ######################################################################
     # make unit str
@@ -1213,7 +1259,7 @@ class Quantity(object):
 
     ######################################################################
     # return
-    return "{}{} +- {} {}".format(name, self.value / prefactor, self.stddev() / prefactor, pUnit)
+    return "{}{} +- {} {} {}".format(name, value, error, ssmult, pUnit)
 
 
 
