@@ -36,8 +36,16 @@ import math
 import scipy.misc as sm
 import scipy.constants as sc
 import collections
+import shelve
+import copy
+from texport import push
 
-SELF_PREFERRED = '--this should always fail when parsed--'
+SELF_PREFERRED = '--this should always fail when parsed-- 00'
+SCALE_EQUALLY = '--this should always fail when parsed-- 01'
+PRE_SCALE_ONLY = '--this should always fail when parsed-- 02'
+DO_NOT_SCALE = False
+SCALE_HOOD = '--this should always fail when parsed-- 04'
+AUTO = '--this should always fail when parsed-- 05'
 
 
 ################################################################################
@@ -128,6 +136,8 @@ class Quantity(object):
   unitLatex  = []
   unitVec    = []
   unitFactor = []
+
+  storage = None
 
 
   def baseDim(n):
@@ -282,12 +292,12 @@ class Quantity(object):
 
     if True:
       if symbol in Quantity.unitSymbol:
-        print('Can not add {} to unit base. 1'.format(symbol))
+        raise Exception('Can not add {} to unit base. 1'.format(symbol))
       if len(symbol) > 1 and symbol[0] in Quantity.prefixSymbol and symbol[1:] in Quantity.unitSymbol:
-        print('Can not add {} to unit base. 2'.format(symbol))
+       raise Exception('Can not add {} to unit base. 2'.format(symbol))
       for p in Quantity.prefixSymbol:
         if p + symbol in Quantity.unitSymbol:
-          print('Can not add {} to unit base. 3'.format(symbol))
+         raise Exception('Can not add {} to unit base. 3'.format(symbol))
           
     Quantity.unitLabel.append(label)
     Quantity.unitSymbol.append(symbol)
@@ -490,12 +500,12 @@ class Quantity(object):
       tokens = Quantity._parseUnitString(unit)
       self.uvec = np.zeros(Quantity.dim, dtype='int8')
       for t in tokens:
-        if isinstance(t, Quantity._UnitToken):
+        if isinstance(t, _UnitToken):
           self.preferredUnit.append(t)
           self.variance *= t.prefactor**2
           self.value    *= t.prefactor
           self.uvec     += t.uvec
-        elif isinstance(t, Quantity._VaerToken):
+        elif isinstance(t, _VaerToken):
           self.variance = self.value**2 * t.stddev**2 + t.value**2 * self.variance
           self.value   *= t.value
           
@@ -1099,7 +1109,7 @@ class Quantity(object):
 
     return Quantity(value, variance=variance, unit=uvec)
 
-  def pu(self, s):
+  def prefunit(self, s):
     """
     Sets the preferred unit of this quantity. The parameter must be parsable by
     Quantity._parseUnitString.
@@ -1107,34 +1117,55 @@ class Quantity(object):
     """
     unit = Quantity._parseUnitString(s)
     for u in unit:
-      if isinstance(u, Vaer): raise ValueError('Preferred unit string must not contain value/error tokens.')
+      if isinstance(u, _VaerToken): raise ValueError('Preferred unit string must not contain value/error tokens.')
 
-    self.preferredUnit = u
+    self.preferredUnit = unit
     return self
 
-  def isaMagnitude(value, error):
+  def _isaMagnitude(value, error):
+    """
+    All the internal methods dealing with a nice string representation
+    should be prefixed with _isa. The prefix _isa is not an abbreviation. I
+    just wanted to name this kid.
+    """ 
     sv = math.floor(math.log10(abs(value))) if value else None
     se = math.floor(math.log10(abs(error))) if error else None
     # if first significant digit is a 1
-    if error * 10**-se< 2.0: se-= 1
+    if se is not None:
+      if error * 10**-se< 1.95: se-= 1
 
     return sv, se
 
-  def isaPenalty(self, value, error, ulist, svec):
+  def _isaPenalty(value, error, ulist, svec):
     """
     This function should be minimized.
     """
-    sv, se = isaMagnitude(value, error)
+    sv, se = Quantity._isaMagnitude(value, error)
+    stilde = Quantity._isaScaleExponent(svec, ulist)
 
-    # TODO
+    if sv is not None: V = abs(sv + stilde)**1.2
+    else:              V = 0
 
+    if se is not None: E = (se + stilde + 1)**2 / 4
+    else:              E = 0 
+
+    if sv is None: E *= 3
+    if se is None: V *= 2
+
+
+    U =  sum([abs(u.exponent**1.1 * s) for u, s in zip(ulist, svec[1:])])
+    #if sum([abs(s) for s in svec[1:]]) > 0:
+    #U += sum([abs(s) for s in svec])/100
 
     return V + E + U
 
-  def isaScaleFactor(self, svec, ulist):
+  def _isaScaleFactor(svec, ulist):
+    return 10**(Quantity._isaScaleExponent(svec, ulist))
+
+  def _isaScaleExponent(svec, ulist):
     """
     General:
-      v+-e 10^s_0 Π (10^s_i p_i u_i)^e_i
+      (v+-e) * scaleFactor * 10^s_0 Π (10^s_i p_i u_i)^e_i
      
       v and e - are value and error
       s_0     - preunit scale exponent
@@ -1150,27 +1181,105 @@ class Quantity(object):
     if len(svec) == 0:
       raise ValueError('There must be at least the PREunit scale exponent.')
 
-    return 10**(-svec[0]-sum([s * u.exponent for s, u in zip(svec[1:], ulist)])
+    return -svec[0]-sum([s * u.exponent for s, u in zip(svec[1:],
+    ulist)])
 
+#  def _isaOptimatize(self, ....):
 
-  def str(self, unit=SELF_PREFERRED, scale=True, brackets=True, name=True, reasonable=True, prefix=True, times=False):
+  def _isaNeighbors(svec, unitlist, hood):
+    pfactors = Quantity.prefixFactor
+    if 1 not in pfactors: pfactors.append(1)
+    pexponents = sorted([math.log10(f) for f in pfactors])
+    pexponentsNP = np.array(pexponents)
+    plen = len(pexponents)
+    neighbor = []
+    L = len(svec)
+    #if hood is None:
+    #  hood = [prehood] + [unithood] * (L-1)
+    l = sum(hood)
+    hood = np.array(hood, dtype='int8')
+    relHousenumber = -hood
+
+    #pnumber = np.array([svec[0]] + [pexponents.index(s) for s in svec[1:]])
+
+    upper = [svec[0]-1]
+    lower = [svec[0]+1]
+    for s, u in zip(svec[1:], unitlist):
+      sprefix = 0
+      if u.prefix:
+        sprefix = math.log10(Quantity.prefixFactor[Quantity.prefixSymbol.index(u.prefix)])
+      seff = s + sprefix
+      greater = pexponentsNP[pexponentsNP > seff]
+      less    = pexponentsNP[pexponentsNP < seff]
+      if len(greater) > 0: upper.append(min(greater) - sprefix)
+      else: upper.append(s)
+      if len(less) > 0: lower.append(max(less) - sprefix)
+      else: lower.append(s)
+      
+
+    while True:
+      npn = upper * (relHousenumber==1) + svec * (relHousenumber==0) + lower * (relHousenumber==-1)
+      neighbor.append(npn)
+
+      # inc
+      for i in range(len(relHousenumber)):
+        if hood[i] == 1:
+          relHousenumber[i] += 1
+          if relHousenumber[i] >= 2:
+            relHousenumber[i] = -1
+          else:
+            break
+
+      if (relHousenumber == -hood).all(): # overflow occurred
+        break
+
+    return neighbor
+
+  def _isaOptimize(value, error, svec, ulist, hood):
+    prev = Quantity._isaPenalty(value, error, ulist, svec)
+    init = prev
+    mins = svec
+    while True:
+      neighbors = Quantity._isaNeighbors(mins, ulist, hood)
+      environment = [ (n, Quantity._isaPenalty(value, error, ulist, n)) for n in neighbors]
+      direction = min(environment, key=lambda e: e[1])
+      if direction[1] >= prev:
+        if prev + 2 < init:
+          return direction[0]
+        else:
+          return svec
+      else:
+        mins, prev = direction
+
+  def str(self, unit=SELF_PREFERRED, scale=SELF_PREFERRED,
+  brackets=AUTO, name=True, reasonable=True, times=AUTO, hood=None,
+  latex=False):
     """
     unit specification must be a string parsable by parserUnitString.
     if scale is False, value of prefix parameter will be ignored.
     """
+    
+    if len(self) > 1:
+      l = []
+      for q in self:
+        l.append(q.str(unit, scale, brackets, name, reasonable, times, hood, latex))
+      return '\n'.join(l)
+
+
     ######################################################################
     # make unit list
     if unit == SELF_PREFERRED: 
-      token = self.preferredUnit
+      token = copy.deepcopy(self.preferredUnit)
+      # if this causes problems, if should only save a string
     else:
       token = Quantity._parseUnitString(unit)
 
     prefactor = 1
     uvec      = np.zeros(Quantity.dim, dtype='int8')
     for t in token:
-      if isinstance(t, Quantity._VaerToken):
+      if isinstance(t, _VaerToken):
         raise ValueError("Unit specification must not contain a ValueToken.")
-      assert isinstance(t, Quantity._UnitToken)
+      assert isinstance(t, _UnitToken)
       prefactor *= t.prefactor
       uvec      += t.uvec
   
@@ -1184,53 +1293,71 @@ class Quantity(object):
 
     value = self.value / prefactor
     error = self.stddev() / prefactor
-    
-    # rules for number making:
-    #  - error must not be less than 0.001
-    #  - error should have as less digits as possible
-    #  - value should be between 1 and 10,000
-    #     => value/error > 10^6: error=0.00x
 
     if reasonable:
-      sv, se = scales(value, error)
-      error = round(error, -se)
-      value = round(value, -se)
+      sv, se = Quantity._isaMagnitude(value, error)
+      if se is not None:
+        error = round(error, -se)
+        value = round(value, -se)
 
-    ssmult = ''
-    prefix = False
+    ssmult = None
+    dig = None
     if scale:
-      sv, se = scales(value, error)
+      svec = [0] + [0]*len(token)
+      if scale== SELF_PREFERRED:
+        all = True
+        for u in token:
+          if u.sca != '!':
+            all = False
+            break
+        if all:
+          hood = [1] + [0]*len(token)
+        else:
+          hood = [0] + [u.sca != '!' for u in token]
+        
+      elif scale== SCALE_EQUALLY:
+        hood = [0] + [1]*len(token)
+      elif scale== PRE_SCALE_ONLY:
+        hood = [1] + [0]*len(token)
+      elif scale == SCALE_HOOD:
+        pass
+        # hood = hood...
+      else: raise ValueError('Unknown scale mode!')
 
-    """  ####################################
-      # determine scale value
-      if sv - se >= 6:
-        # in this case, all hope is lost. There is no nice way to print this
-        # scale error as small as possible (> 0.001) 
-        if not prefix:
-          scale = 3 + se
-          digits = 3
-        else:
-          #here a lot of testing has to be done...
-          pass
-      elif sv - se >= 4:
-        if not prefix:
-          scale = -3 + sv
-          digits = sv - se - 3
-        else:
-          #here a lot of testing has to be done...
-          pass
-      else:
-        if not prefix:
-          scale = se
-          digits = 0
-        else:
-          #here a lot of testing has to be done...
-          pass
+      svec = Quantity._isaOptimize(value, error, svec, token, hood) 
+      value *= Quantity._isaScaleFactor(svec, token)
+      error *= Quantity._isaScaleFactor(svec, token)
+      if reasonable and se is not None:
+          # error given
+          dig = -se - Quantity._isaScaleExponent(svec, token)
+          dig = int(dig)
+          if dig < 0:
+            value = round(value, -dig)
+            error = round(error, -dig)
+            dig = 0
+           
+      if svec[0] != 0:
+        ssmult = '10^'+str(int(svec[0]))
 
-      ssmult = '10^{:.0f}'.format(scale) # string scale multiplicator
-      value *= 10**-scale
-      error *= 10**-scale
-      """
+      ntoken = []
+      for s, t in zip(svec[1:], token):
+        eff = s
+        if t.prefix:
+          eff += math.log10(Quantity.prefixFactor[Quantity.prefixSymbol.index(t.prefix)])
+        if eff != 0:
+          sym = Quantity.prefixSymbol[Quantity.prefixFactor.index(10**eff)]
+        else: sym = ''
+        t.prefix = sym
+        ntoken.append(t)
+      token = ntoken
+
+    if se is None and False:
+      dig = -sv - Quantity._isaScaleExponent(svec, token)
+      dig = int(dig)
+      if dig < 0: 
+        dig = 0
+        value = round(value, -dig)
+ 
 
     ######################################################################
     # make unit str
@@ -1239,99 +1366,102 @@ class Quantity(object):
     for t in token:
       p = t.exponent
       b = t.prefix + t.symbol
+      if latex:
+        b = '\\mathrm{' + b + '}'
       if p > 0:
         over.append(b + ('^'+str(p) if p>1 else ''))
       if p < 0:
         under.append(b + ('^'+str(-p) if p<-1 else ''))
-    pUnit = ' '.join(over) + (' / ' + ' '.join(under) if len(under)>0 else '')
+
+    if latex:
+      if len(under)>0:
+        pUnit = '\\frac{' + (' '.join(over)) + '}{' + (' '.join(under)) + '}'
+      else:
+        pUnit = ' '.join(over)
+      pUnit = r'\,' + pUnit
+    else:
+      pUnit = ' '.join(over) + (' / ' + ' '.join(under) if len(under)>0 else '')
 
     ######################################################################
     # make naming
     if name:
-      if self.symbol != '': 
-        if isinstance(self.symbol, (list,tuple)): name = '[' + ', '.join(self.symbol) + '] = '
-        else: name = self.symbol + ' = '
-      elif self.label != '':
-        if isinstance(self.label, (list, tuple)): name = '[' + ', '.join(self.label) + ']: ' 
-        else: name = self.label + ': '
+      if latex and self.latex: name = self.latex + ' ='
+      elif self.symbol:        name = self.symbol + ' ='
+      elif self.label and latex:
+        name = '\\mathrm{' + self.label + '}:'
+      elif self.label:
+        name = self.label + ':'
+
       else: name = ''
     else: name = ''
 
     ######################################################################
     # return
-    return "{}{} +- {} {} {}".format(name, value, error, ssmult, pUnit)
+    if brackets == AUTO:
+      if error == 0 or (not ssmult and not pUnit):
+        brackets = False
+      else: brackets = True
+
+    if times == AUTO:
+      if ssmult: times = '\\cdot' if latex else '*'
+      else:      times = False
+
+    if dig is not None: f = '{:.' + str(dig) + 'f}'
+    else: f = '{}'
+
+    l = []
+    if name: l.append(name)
+
+    if brackets:
+      l.append('(' + f.format(value))
+    else:
+      l.append(f.format(value))
+
+    if error != 0:
+      if latex: l.append(r'\pm')
+      else: l.append('+-')
+      if brackets:
+        l.append(f.format(error) + ')')
+      else:
+        l.append(f.format(error))
+
+    if times: l.append(times)
+    if ssmult: l.append(ssmult)
+    if pUnit: l.append(pUnit)
+
+    return ' '.join(l)
 
 
+  def tex(self, unit=SELF_PREFERRED, scale=SELF_PREFERRED,
+  brackets=AUTO, name=True, reasonable=True, times=AUTO, hood=None):
 
-  def latex(self): pass
-  def store(self): pass
-  def lexport(self): pass
+    return self.str(unit, scale, brackets, name, reasonable, times, hood,
+    latex=True)
 
-  class _UnitToken(object):
-    """
-    This class is used for (code) efficient parsing and representation of unit
-    strings. In fact this class one single term in a unit string. This class is
-    intended to keep some data, and to not have some fancy methods!
 
-    This class is only used internally!
-    """
-    def __init__(self, prefix, symbol, exponent, prefactor, uvec):
-      """
-      Constructor of UnitToken class.
-      
-      Parameters:
-        symbol    - The symbol as it appeared in the unit string but without any
-                    prefix. This means that if the unit is prefixed, the prefix
-                    is supposed to be removed an passed to prefix instead.
+  def restore(id):
+    if not Quantity.storage:
+      Quantity.storage = shelve.open('quantities.db')
 
-        uvec      - This is the unit vector representing the unit, i.e. a list
-                    or tuple of Quantity.dim length.
+    return Quantity.storage[id]
 
-        exponent  - The exponent as it appeared in the unit string, i.e. the
-                    part after the '^' character. This should be an integer.
-                    Default: 1
+  def store(self, id): 
+    if not Quantity.storage:
+      Quantity.storage = shelve.open('quantities.db')
 
-        prefix    - The string prefix is one was present. The concatenation of
-                    symbol and prefix should always yield the string as it
-                    appeared in the unit string. 
+    Quantity.storage[id] = self
 
-        prefactor - If the unit is prefixed, this must be its numerical
-                    prefactor regarding the unit vector. The value should also
-                    pay attention to the exponent! For example: when this
-                    represents cm^2, the correct prefactor is 1/100^2
-                    
-      """
-      self.symbol = symbol
-      self.uvec = uvec
-      self.exponent = exponent
-      self.prefix = prefix
-      self.prefactor = prefactor
+  def dir():
+    if not Quantity.storage: 
+      Quantity.storage = shelve.open('quantities.db')
 
-    def __repr__(self):
-      return '<Unit: {}`{}^{:+1.1f} | {:1.1f} * {} >'.format(self.prefix or '_',
-       self.symbol, float(self.exponent), self.prefactor, self.uvec)
-                    
-  class _VaerToken(object):
-    """
-    This class is used for (code) efficient parsing and representation of unit
-    strings. This class represents the 'a+-b' tokens in the string. This class
-    is intended to keep only the valued a and b, and to not have some fancy
-    methods!
-    The name is an abbreviation of value and error.
-
-    This class is only used internally!
-    """
-    def __init__(self, value, stddev):
-      """
-      Constructor of VaerToken class.
-
-      Parameters: should be self explaining...
-      """
-      self.value = value
-      self.stddev = stddev
-
-    def __repr__(self):
-      return '<Vaer: {} +- {} >'.format(self.value, self.stddev)
+    for key in Quantity.storage:
+      print('{:16}->  {}'.format(key, repr(Quantity.storage[key])))
+  
+  def texport(self, id, *args, **kwds): 
+    s = self.tex(*args, **kwds)
+    s = r'\ensuremath{' + s + '}'
+    push(id, s)
 
 
   def _parseUnitString(s):
@@ -1369,7 +1499,7 @@ class Quantity(object):
 
     # building regular expression
     # The regular expression will not check if the units and prefixed are known.
-    rUnitToken = r'([a-zA-Z]+)(\s*\^\s*(-?[0-9]+(\.[0-9]+)?))?'
+    rUnitToken = r'([!~]?)([a-zA-Z]+)(\s*\^\s*(-?[0-9]+(\.[0-9]+)?))?'
     rVaerToken = r'(-?[0-9]+(\.[0-9]*)?(e[-+]?[0-9]+)?)(\s*\+-\s*([0-9]+(\.[0-9]*)?(e[-+]?[0-9]+)?))?'
     rSeparator = r'\s*([\s*/])\s*'
     r          = '(({}|{})($|{}))*$'.format(rUnitToken, rVaerToken, rSeparator)
@@ -1388,12 +1518,13 @@ class Quantity(object):
       # analyse unit token
       m = re.match(rUnitToken, token)
       if m:
-        sym = m.group(1)
-        exp = float(m.group(3) or 1)
+        sca = m.group(1)
+        sym = m.group(2)
+        exp = float(m.group(4) or 1)
         if exp % 1==0: exp = int(exp)
         # check if sym is valid unit
         prefix, symbol, prefactor, uvec = Quantity._searchUnit(sym)
-        t = Quantity._UnitToken(prefix, symbol, mode*exp, prefactor**(mode*exp), uvec*exp*mode)
+        t = _UnitToken(prefix, symbol, mode*exp, prefactor**(mode*exp), uvec*exp*mode, sca)
         l.append(t)
         continue
 
@@ -1416,7 +1547,7 @@ class Quantity(object):
           err = err/val**2
           val = 1/val
         if val == 1 and err ==0: continue
-        l.append(Quantity._VaerToken(val, err))
+        l.append(_VaerToken(val, err))
         continue
 
       # analyse separator
@@ -1556,6 +1687,77 @@ def enumstr(s, *r):
     l.append(s + str(i))
   return l
 
+class _UnitToken(object):
+  """
+  This class is used for (code) efficient parsing and representation of unit
+  strings. In fact this class one single term in a unit string. This class is
+  intended to keep some data, and to not have some fancy methods!
+
+  This class is only used internally!
+  """
+  def __init__(self, prefix, symbol, exponent, prefactor, uvec, sca):
+    """
+    Constructor of UnitToken class.
+    
+    Parameters:
+      symbol    - The symbol as it appeared in the unit string but without any
+                  prefix. This means that if the unit is prefixed, the prefix
+                  is supposed to be removed an passed to prefix instead.
+
+      uvec      - This is the unit vector representing the unit, i.e. a list
+                  or tuple of Quantity.dim length.
+
+      exponent  - The exponent as it appeared in the unit string, i.e. the
+                  part after the '^' character. This should be an integer.
+                  Default: 1
+
+      prefix    - The string prefix is one was present. The concatenation of
+                  symbol and prefix should always yield the string as it
+                  appeared in the unit string. 
+
+      prefactor - If the unit is prefixed, this must be its numerical
+                  prefactor regarding the unit vector. The value should also
+                  pay attention to the exponent! For example: when this
+                  represents cm^2, the correct prefactor is 1/100^2
+
+      sca       - Preference if scale behavior. '!' means, that the
+                  isa algorithms does not try to scale this unit. '~'
+                  means that the isa algorithms try to scale this unit
+                  preferably. An empty string will mean that no preference
+                  is set.
+    """
+    self.symbol = symbol
+    self.uvec = uvec
+    self.exponent = exponent
+    self.prefix = prefix
+    self.prefactor = prefactor
+    self.sca = sca
+
+  def __repr__(self):
+    return '<Unit: {}{}`{}^{:+1.1f} | {:1.1f} * {} >'.format(self.sca or ' ', self.prefix or '_', self.symbol, float(self.exponent), self.prefactor, self.uvec)
+                  
+class _VaerToken(object):
+  """
+  This class is used for (code) efficient parsing and representation of unit
+  strings. This class represents the 'a+-b' tokens in the string. This class
+  is intended to keep only the valued a and b, and to not have some fancy
+  methods!
+  The name is an abbreviation of value and error.
+
+  This class is only used internally!
+  """
+  def __init__(self, value, stddev):
+    """
+    Constructor of VaerToken class.
+
+    Parameters: should be self explaining...
+    """
+    self.value = value
+    self.stddev = stddev
+
+  def __repr__(self):
+    return '<Vaer: {} +- {} >'.format(self.value, self.stddev)
+
 ################################################################################
 def sin(x):
   if isinstance(x, Quantity): return x.calc(np.sin, np.cos)
@@ -1693,6 +1895,7 @@ Watt              = Quantity.addUnit('Watt', 'W', Joule / Second)
 Volt              = Quantity.addUnit('Volt', 'V', Watt / Ampere)
 Hertz             = Quantity.addUnit('Hertz', 'Hz', 1 / Second)
 Pascal            = Quantity.addUnit('Pascal', 'Pa', Newton / Meter**2)
+Bar               = Quantity.addUnit('Bar', 'bar', 100000 * Pascal)
 Coulomb           = Quantity.addUnit('Coulomb', 'C', Ampere * Second)
 Ohm               = Quantity.addUnit('Ohm', 'Ohm', Volt / Ampere, latex='\Omega') 
 Siemens           = Quantity.addUnit('Siemens', 'S', 1 / Ohm)
@@ -1712,10 +1915,10 @@ Liter             = Quantity.addUnit('Liter', 'l', Meter**3 / 1000)
 Minute            = Quantity.addUnit('Minute', 'min', 60 * Second)
 Hour              = Quantity.addUnit('Hour', 'hr', 60 * Minute)
 Day               = Quantity.addUnit('Day', 'd', 24 * Hour)
-Year              = Quantity.addUnit('Year', 'a', 365 * Day)
+Year              = Quantity.addUnit('Year', 'yr', 365 * Day)
 LightYear         = Quantity.addUnit('LightYear', 'ly', sc.light_year * Meter)
-AstronomicalUnit  = Quantity.addUnit('AstronomicalUnit', 'au', sc.au * Meter)
-Parsec            = Quantity.addUnit('Parsec', 'pc', sc.parsec * Meter)
+AstronomicalUnit  = Quantity.addUnit('AstronomicalUnit', 'AU', sc.au * Meter)
+Parsec            = Quantity.addUnit('Parsec', 'psec', sc.parsec * Meter)
 Angstrom          = Quantity.addUnit('Ångström', 'Å', 1e-10 * Meter)
 Dioptre           = Quantity.addUnit('Dioptre', 'dpt', 1 / Meter)
 AtomicUnit        = Quantity.addUnit('AtomicUnit', 'u', sc.u * Kilogram)
@@ -1724,5 +1927,5 @@ Barn              = Quantity.addUnit('Barn', 'barn', 1e-28 * Meter**2)
 PlanckConstant    = Quantity.addUnit('PlanckConstant', 'h', sc.h * Joule * Second)
 DiracConstant     = Quantity.addUnit('DiracConstant', 'hbar', sc.hbar * Joule * Second)
 SpeedOfLight      = Quantity.addUnit('SpeedOfLight', 'c', sc.c * Meter / Second)
-Barn              = Quantity.addUnit('Barn', 'b', 10e-14 * (Centi * Meter)**2)
+#Barn              = Quantity.addUnit('Barn', 'b', 10e-14 * (Centi * Meter)**2)
 Fermi             = Quantity.addUnit('Fermi', 'fermi', Femto * Meter)

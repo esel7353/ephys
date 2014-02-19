@@ -91,6 +91,8 @@ def mean(it, stddev=None):
   else:
     raise TypeError('First argument must be iterable.')
 
+
+
 if __name__ == '__main__':
   x = np.arange(10)
   s = np.zeros(10) + 0.1
