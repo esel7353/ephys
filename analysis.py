@@ -31,9 +31,12 @@
 ################################################################################
 
 import numpy as np
+import scipy.odr as odr
 import math
 import scipy.constants as sc
 import collections
+import warnings
+import pylab
 from data import Quantity, Meter
 
 def mean(it, stddev=None):
@@ -93,18 +96,6 @@ def mean(it, stddev=None):
 
 
 
-if __name__ == '__main__':
-  x = np.arange(10)
-  s = np.zeros(10) + 0.1
-  q = Quantity(x, 0, Meter) | 0.1
-  r = Quantity(x, s, Meter)
-
-  assert mean(x, 0.1)  == (4.5, 0.1 / math.sqrt(10))
-  assert mean(x, s)    == (4.5, 0.1 / math.sqrt(10))
-  assert mean(q)       == Quantity(4.5, 0.1 / math.sqrt(10), Meter)
-  assert mean(r)       == Quantity(4.5, 0.1 / math.sqrt(10), Meter)
-  assert mean((1,2,3)) == 2
-
 
 def scatter(it, m=None):
   """
@@ -139,11 +130,6 @@ def scatter(it, m=None):
   else:
     raise TypeError('First argument must be iterable.')
 
-if __name__ == '__main__':
-  assert scatter(x) == math.sqrt(((x-4.5)**2).sum() / (len(x) - 1))
-  assert scatter(x, 10) == math.sqrt(((x-10)**2).sum() / (len(x) - 1))
-  assert scatter(q) == math.sqrt(((x-4.5)**2).sum() / (len(x) - 1))
-  assert scatter((1,2,3)) == 1
     
 """
 def fit(func, x, y, sx=None, sy=None, p0=None):
@@ -157,50 +143,166 @@ def const(x, c): return c
 
 
 
-  
+"""  
 class ModelFit(object):
 
-  def __init__(self, *parameters, func=const):
-    self.func = func
+  def __init__(self, *parameters, func=None, modeq=''):
+    if func is not None: self.func = func
+    for p in parameters:
+      if not isinstance(p, Quantity):
+        raise TypeError('Fit Parameters must be quantities')
     self.parameters = parameters
+    self.model = odr.Model(lambda p, x: self.func(x, *p))
+    self.modeq = modeq
 
   def covmatrix():
     return self.cov
 
   def func(x, *pvalues):
-    return self.func(x, *pvalues)
-  
-  def fit(self, x, y, sx=None, sy=None, covx=None, covy=None, p0=None):
-    " ""
-    returns chi^2/ndf
-    " ""
-    pass
+    return 0 
 
 
-  def save(self, filename):
-    pass
+  def puStr(q):
+    token = q.preferredUnit
+    over = []
+    under = []
+    for t in token:
+      p = t.exponent
+      b = t.prefix + t.symbol
+      b = '\\mathrm{' + b + '}'
+      if p > 0:
+        over.append(b + ('^'+str(p) if p>1 else ''))
+      if p < 0:
+        under.append(b + ('^'+str(-p) if p<-1 else ''))
+
+    if len(under)>0:
+      pUnit = '\\frac{' + (' '.join(over)) + '}{' + (' '.join(under)) + '}'
+    else:
+      pUnit = ' '.join(over)
+    pUnit = r'\,' + pUnit
+
+    return pUnit
+
+  def fit(self, x, y, estimate=True, maxit=None, fullinfo=False):
+    if not isinstance(x, Quantity) or not isinstance(y, Quantity):
+      raise TypeError('Data must be quantities')
+
+    if estimate:
+      p0 = self.estimate(x, y)
+    else:
+      p0 = [p.value for p in self.parameters]
+
+    self.xo = x
+    self.yo = y
 
 
-  def figure(self):
-    fig=1
-    #make fig
-    return fig
+    sx = x.stddev()
+    x  = x.value
+    sy = y.stddev()
+    y  = y.value
 
-  def style():
-    pass
+    if hasattr(x, '__len__'):    l = len(x)
+    elif hasattr(y, '__len__'):  l = len(y)
+    elif hasattr(sx, '__len__'): l = len(sx)
+    else:                  l = __len__(sy)
+
+    if not hasattr(sx, '__len__'): sx = np.zeros(l) + sx
+    if not hasattr(x, '__len__'):  x  = np.zeros(l) +  x
+    if not hasattr(sy, '__len__'): sy = np.zeros(l) + sy
+    if not hasattr(y, '__len__'):  y  = np.zeros(l) +  y
+
+    self.x = x
+    self.y = y
+    self.sx = sx
+    self.sy = sy
+
+    data = odr.RealData(x, y, sx, sy)
+    algo = odr.ODR(data, self.model, p0, maxit=maxit)
+    algo.run()
+    result = algo.output
+ 
+    stopreason = result.info
+    if stopreason > 3:  # on error
+      stopreason = result.stopreason
+      warnings.warn('ODR fit did fail! ' + stopreason)
+
+    
+    dof = len(sx) - len(result.beta)
+    self.cov = result.cov_beta
+    for p, b, sb in zip(self.parameters, result.beta, result.sd_beta):
+      p.value    = b
+      p.variance = sb
+
+    # make a unit check
+
+    chi = result.sum_square/dof
+    self.chi = chi
+    self.sr = stopreason
+    if fullinfo: 
+      return chi, stopreason, result
+    else:
+      return chi, stopreason
+
+
+  def plot(self, title="", clear=True):
+    if clear: pylab.clf()
+    pylab.xlim(min(self.x), max(self.x)) # add margin
+    pylab.ylim(min(self.y), max(self.y)) # add margin
+
+    xlab = []
+    if self.xo.label: xlab.append(self.xo.label)
+    if self.xo.latex:
+      xlab.append('$' + self.xo.latex + '$')
+    elif self.xo.symbol:
+      xlab.append('$' + self.xo.symbol + '$')
+
+    #xlab.append( #TODO
+    if len(xlab): pylab.xlabel(' '.join(xlab))
+
+    ylab = []
+    if self.yo.label: ylab.append(self.yo.label)
+    if self.yo.latex:
+      ylab.append('$' + self.yo.latex + '$')
+    elif self.yo.symbol:
+      ylab.append('$' + self.yo.symbol + '$')
+    if len(ylab): pylab.ylabel(' '.join(ylab))
+
+    #einheit
+
+    pylab.errorbar(self.x, self.y, self.sy, self.sx, '.k', markersize=3)
+    x = np.linspace(min(self.x), max(self.x), 250)
+    y = self.func(x, *[p.value for p in self.parameters])
+    pylab.plot(x, y, '-b')
+
+    
+    leg = ['Fit: $' + self.modeq + '$'] + ['$' + p.tex() + '$' for p in self.parameters]
+    leg.append(r'$\chi^2/\mathrm{dof} = ' + ('{:.3f}'.format(self.chi)) + '$')
+
+    pylab.text(min(x), max(y), '\n'.join(leg), horizontalalignment='left',
+    verticalalignment='top')
+
+    return self
 
   def estimate(self, x, y):
     return np.zeros(len(self.parameters)) + 1
+
+  def show(self):
+    pylab.show()
+
+  def savefig(self, *args, **kwds):
+    pylab.savefig(*arg, **kwds)
+
+class Plot:
+
+  def __init__(self, title=""):
+    pass
+    
+
 
 
 def peak(data):
   pass
 
-class SinLFit(ModelSin):
-  pass
-
-class SinCFit(ModelSin):
-  pass
 
 class SinFit(ModelFit):
 
@@ -214,4 +316,8 @@ class SinFit(ModelFit):
     
 
 
-"""
+class SinFit_L(SinFit):
+  pass
+
+class SinFit_C(SinFit):
+  pass
