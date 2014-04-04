@@ -34,10 +34,136 @@ import numpy as np
 import scipy.odr as odr
 import math
 import scipy.constants as sc
+from scipy.special import wofz
 import collections
 import warnings
 import pylab
-from data import Quantity, Meter
+import shelve
+import re
+import sys
+from ephys.data import Quantity, Meter
+import ephys.data as data
+import ephys.texport
+
+class StdDev(object):
+  def __init__(self, q):
+    self.q = q
+  
+  @property
+  def uvec(self):
+    return self.q.uvec
+
+  def sprefunit(self):
+    return self.q.sprefunit()
+
+  @property
+  def value(self):
+    return np.sqrt(self.q.variance)
+  
+  @value.setter
+  def value(self, v):
+    self.q.variance = v**2
+  
+
+def daq(f, *columns, skip=0, sep=r'\s*[,]\s*', default=0., convert=float, c2d=False):
+  l = len(columns)
+  if l == 0: return
+  for c in columns:
+    if not isinstance(c, (Quantity, StdDev)):
+      raise TypeError("Column must be quantity")
+
+  val = []
+  if isinstance(f, Quantity):
+    raise TypeError("Fist argument must be file, not quantity!")
+  elif isinstance(f, str):
+    f = open(f, 'r')
+
+  for line in f.readlines():
+    if skip:
+      skip -= 1
+      continue
+    line = line.strip()
+    if not line: continue
+    row = re.split(sep, line, l)
+
+    if c2d:
+      row = [r.replace(',', '.') for r in row]
+    row = [ (convert(r) if r else default) for r in row]
+
+    if len(row) < l: row += [default] * (l - len(row))
+
+    val.append(row)
+  f.close()
+
+  val = list(zip(*val))
+
+  result = []
+  for i in range(l):
+    f = float(Quantity(unit=columns[i].sprefunit()) / Quantity(unit=columns[i].uvec) )
+    columns[i].value = np.array(val[i]) * f
+  
+
+################################################################################
+# General
+def readq(filename, label='', symbol='', latex='', unit='',  skip=0, sep=r"\s*(,|\s)\s*", default=0., convert=float, c2d=False, stddev=[], stdlink={}, n=0):
+  """
+  Reads a file of data. The file is supposed to contain columnes which are separated by some string. A row is defined
+  by a line. Each columns will be read into a numpy array or quantity object. The function returns a list with all the columns.
+  """
+  f = open(filename)
+
+  if isinstance(label, str):   label = [s.strip() for s in label.split('|')]
+  if isinstance(symbol, str):   symbol = [s.strip() for s in symbol.split('|')]
+  if isinstance(latex, str):   latex = [s.strip() for s in latex.split('|')]
+  if isinstance(unit, str):   unit = [s.strip() for s in unit.split('|')]
+  l = max(len(label), len(symbol), len(latex), len(unit), len(stddev), n)
+  if len(label) < l: label += [''] * (l - len(label))
+  if len(symbol) < l: symbol += [''] * (l - len(symbol))
+  if len(latex) < l: latex += [''] * (l - len(latex))
+  if len(unit) < l: unit += [1] * (l - len(unit))
+  if len(stddev) < l: stddev += [0] * (l - len(stddev))
+
+
+  val = []
+
+  for line in f.readlines():
+    if skip:
+      skip -= 1
+      continue
+    line = line.strip()
+    row = re.split(sep, line, l)
+    if not l: l = len(row)
+
+    row = [ (convert(r) if r else default) for r in row]
+
+    if len(row) < l: row += [default] * (l - len(row))
+
+    val.append(row)
+
+  columns = list(zip(*val))
+
+  result = []
+  for i in range(l):
+    value = columns[i]
+    u = unit[i]
+    ll = label[i]
+    lx = latex[i]
+    s = symbol[i]
+    std = stddev[i]
+    if i in stdlink:
+      q = Quantity(value, std, u, label=ll, symbol=s, latex=lx)
+      k = stdlink[i]
+      if unit[k]:
+        q = q | Quantity(val[k], unit=unit[k])
+      else:
+        q = q | Quantity(val[k], unit=unit[i])
+      result.append(q)
+    else: 
+      result.append(Quantity(value, std, u, label=ll, symbol=s, latex=lx))
+  
+  return result
+
+
 
 def mean(it, stddev=None):
   """
@@ -84,7 +210,7 @@ def mean(it, stddev=None):
       return (m, stddev)
   elif isinstance(it, Quantity):
     if stddev is not None: raise ValueError('If Quantity given std must not be give')
-    (m, stddev) = mean(it.value, it.variance)
+    (m, stddev) = mean(it.value, it.stddev())
     return Quantity(m, stddev, it.uvec)
   elif isinstance(it, collections.Iterable):
     if stddev is None:
@@ -130,23 +256,322 @@ def scatter(it, m=None):
   else:
     raise TypeError('First argument must be iterable.')
 
+################################################################################
+# Plotter
+
+class Plot:
+
+  def __init__(self):
+    self._made      = False
+    self._data     = []
+    self._boxes    = []
+    self._enlarge  = (0.02,0.02,0.02,0.02)
+    self._grid     = True
+    self._xscale   = 'linear'
+    self._yscale   = 'linear'
+    self._leg      = False
+    self._xaxis    = None
+    self._yaxis    = None
+    self._fitcount = 0
+
+  def xaxis(self, q): 
+    self._made = False
+    if not isinstance(q, Quantity):
+      raise TypeError("xaxis argument must be Quantity!")
+    self._xaxis = Quantity(q.sprefunit())
+    self._xaxis.label = q.label
+    self._xaxis.latex = q.latex
+    self._xaxis.symbol = q.symbol
+    return self
+  def yaxis(self, q): 
+    self._made = False
+    if not isinstance(q, Quantity):
+      raise TypeError("yaxis argument must be Quantity!")
+    self._yaxis = Quantity(q.sprefunit())
+    self._yaxis.label = q.label
+    self._yaxis.latex = q.latex
+    self._yaxis.symbol = q.symbol
+    return self
+
+  def makex(self):
+    if self._xaxis is None: return ''
+    lab = []
+    if self._xaxis.label:
+      lab.append(self._xaxis.label)
+    sl = self._xaxis.latex or self._xaxis.symbol
+    if sl: 
+      lab.append("${}$".format(sl))
+    punit = self._xaxis.sprefunit(latex=True)
+    if punit:
+      lab.append('in ${}$'.format(punit))
+    return ' '.join(lab)
+  def makey(self):
+    if self._yaxis is None: return ''
+    lab = []
+    if self._yaxis.label:
+      lab.append(self._yaxis.label)
+    sl = self._yaxis.latex or self._yaxis.symbol
+    if sl: 
+      lab.append("${}$".format(sl))
+    punit = self._yaxis.sprefunit(latex=True)
+    if punit:
+      lab.append('in ${}$'.format(punit))
+    return ' '.join(lab)
+
+  """  def xunit(self, s):
+    self._made = False
+    if self._xaxis is None:
+      self._xaxis = Quantity()
+    q = Quantity(s)
+    self._xaxis.preferredUnit = q.preferredUnit
+    self._xaxis.value = q.value
+    self._xaxis.uvec = q.uvec
+    return self
+  def yunit(self, s):
+    self._made = False
+    if self._yaxis is None:
+      self._yaxis = Quantity()
+    q = Quantity(s)
+    self._yaxis.preferredUnit = q.preferredUnit
+    self._yaxis.value = q.value
+    self._yaxis.uvec = q.uvec
+    return self"""
+
+  def xlabel(self, s, symbol=None, latex=None): 
+    self._made = False
+    if self._xaxis is None:
+      self._xaxis = Quantity()
+    self._xaxis.label = s
+    if symbol is not None: self._xaxis.symbol = symbol
+    if latex is not None:  self._yaxis.latex  = latex
+    return self
+  def ylabel(self, s): 
+    self._made = False
+    if self._yaxis is None:
+      self._yaxis = Quantity()
+    self._yaxis.label = s
+    if symbol is not None: self._xaxis.symbol = symbol
+    if latex is not None:  self._yaxis.latex  = latex
+    return self
+
+  def legend(self, on=True):
+    self._made = False
+    self._leg = on
+    return self
+
+
+  def data(self, x, y, fmt, errorbar, label=True, **kwds):
+    self._made = False
+    if label == True:
+      kwds['label']=y.label
+    elif label is not None:
+      kwds['label']=label
+
+
+    self._data.append( (x, y, fmt, errorbar, kwds) )
     
-"""
-def fit(func, x, y, sx=None, sy=None, p0=None):
-  # p1, etc... must be Quantity objects
-  ps = (p1, p2, p2, ...)
-  m = ModelFit(func, ps)
-  m.fit(x, y, sx, sy)
+    if isinstance(x, Quantity):
+      if self._xaxis is None:
+        self.xaxis(x)
+    
+    if isinstance(y, Quantity):
+      if self._yaxis is None:
+        self.yaxis(y)
+    return self
+
+  def error(self, x, y, fmt='.k', markersize=3, label=True, ecolor='0.3', **kwds):
+    self._made = False
+    self.data(x, y, fmt=fmt, markersize=markersize, label=label, ecolor=ecolor, errorbar=True, **kwds)
+    return self # cascade
+
+  def points(self, x, y, fmt='.k', markersize=3, label=True, **kwds):
+    self._made = False
+    self.data(x, y, fmt=fmt, markersize=markersize, label=label, errorbar=False, **kwds)
+    return self # cascade
+    
+  def line(self, x, y, fmt='-b', linewidth=1, label=True, **kwds):
+    self._made = False
+    self.data(x, y, fmt=fmt, linewidth=linewidth, label=label, errorbar=False, **kwds)
+    return self # cascade
+    
+
+
+  fitcolors = 'brgcmy'
+
+  def fit(self, mf, box=True):
+    if not isinstance(mf, ModelFit):
+      raise TypeError("Argument of Plot.fit must be a ModelFit, but {} given.".format(type(mf)))
+
+    self._fitcount += 1
+    text = 'Fit: ${}$\n\n'.format(mf.eq())
+    if mf.sr >= 3:
+      text += 'fit failed ({})!\n'.format(mf.sr)
+    for p in mf.parameters:
+      text += '  ${}$\n'.format(p.tex())
+    text += '  $\chi^2/\mathrm{ndf} = ' +('{:.2f}$'.format(mf.chi))
+
+    xmin = min(mf.xo.value)
+    xmax = max(mf.xo.value)
+
+    if box:
+      self.box( (self._fitcount, text, mf.xo, mf.yo) )
+    x = Quantity(np.linspace(xmin, xmax, 200), unit=mf.xo.uvec)
+    p0 = [Quantity(p.value, 0, p.uvec) for p in mf.parameters]
+    self.line(x, mf.func(x, *p0), fmt='-'+Plot.fitcolors[(self._fitcount-1)%6])
+    return self
+
+
+  def box(self, text):
+    self._made = False
+    self._boxes.append(text)
+    return self
+
+  def xlog(self, log=True):
+    self._made = False
+    self._xscale = 'log' if log else 'linear'
+    return self
   
+  def ylog(self, log=True):
+    self._made = False
+    self._yscale = 'log' if log else 'linear'
+    return self
 
-def const(x, c): return c
+  def save(self, filename, dpi=100, **kwds):
+    if not self._made: self.make()
+    pylab.savefig(filename, dpi=dpi, pad_inches=0.4, bbox_inches='tight', **kwds)
+    return self
+    
+  def show(self):
+    if not self._made: self.make()
+    pylab.show()
+    return self
+
+  def make(self, clf=True):
+    if clf: pylab.clf()
+
+    xlim = None
+    ylim = None
+
+    for x, y, fmt, errorbar, d in self._data:
+      if isinstance(x, Quantity):
+        f = Quantity(unit=x.uvec) / self._xaxis
+        if not f.unitless():
+          warnings.warn('The ratio of x axis unit ({}) and real unit ({}) must be unit less.'.format(self._xaxis.siunit(), y.siunit()))
+        f = float(f)
+        sx = x.stddev() * f
+        x  = x.value * f
+      else:
+        #f = float(1 / Quantity(self._xunit))
+        #x  = x * f
+        sx = 0
+
+      if isinstance(y, Quantity):
+        f = Quantity(unit=y.uvec) / self._yaxis
+        if not f.unitless():
+          warnings.warn('The ratio of preferred unit ({}) and real unit ({}) must be unit less.'.format(self._yaxis.siunit(), y.siunit()))
+        f = float(f)
+        sy = y.stddev() * f
+        y  = y.value * f
+      else:
+        #f = float(1 / Quantity(self.ypreferredUnit))
+        #y  = y * f
+        sy = 0
+
+      xmin = np.nanmin(x - sx)
+      xmax = np.nanmax(x + sx)
+      ymin = np.nanmin(y - sy)
+      ymax = np.nanmax(y + sy)
+      if xlim is None: xlim = [xmin, xmax]
+      if ylim is None: ylim = [ymin, ymax]
+      xlim[0] = min(xlim[0], xmin)
+      xlim[1] = max(xlim[1], xmax)
+      ylim[0] = min(ylim[0], ymin)
+      ylim[1] = max(ylim[1], ymax)
+
+      xerr = sx
+      yerr = sy
+
+      if errorbar:
+        pylab.errorbar(x, y, sy, sx, fmt=fmt, **d)
+      else:
+        pylab.plot(x, y, fmt, **d)
+
+    xdif = xlim[1] - xlim[0]
+    ydif = ylim[1] - ylim[0]
+    xlim[0] -= xdif * self._enlarge[0]
+    xlim[1] += xdif * self._enlarge[1]
+    ylim[0] -= ydif * self._enlarge[2]
+    ylim[1] += ydif * self._enlarge[3]
+
+    pylab.xlim(*xlim)
+    pylab.ylim(*ylim)
+
+    def pos(i):
+      #xy = (0.98+i//3 * 0.2 , 0.9-i%3 * 0.4)
+      #xy = (0.93+i//3 * 0.3 , 0.9-i%3 * 0.3)
+      #xy = (0.93+i//2 * 0.4 , 0.9-i%2 * 0.4)
+      #va = 'top' #['top', 'center', 'bottom' ][i%3]
+      xy = (0.93+i//2 * 0.4 , [0.9, 0.1][i%2])
+      va = ['top', 'bottom' ][i%2]
+      return xy, dict(horizontalalignment='left', verticalalignment=va)
+
+    for b, i in zip(self._boxes, range(len(self._boxes))):
+      xy, align = pos(i)
+      if isinstance(b, tuple):
+        fitnum, b, x, y = b
+
+      if self._fitcount > 1:
+        b = '({}) {}'.format(fitnum, b)
+        fx = Quantity(unit=x.uvec) / self._xaxis
+        fy = Quantity(unit=y.uvec) / self._yaxis
+        if not fx.unitless():
+          warnings.warn('The ratio of preferred unit ({}) and real unit ({}) must be unit less.'.format(self._xaxis.siunit(), x.siunit()))
+        if not fy.unitless():
+          warnings.warn('The ratio of preferred unit ({}) and real unit ({}) must be unit less.'.format(self._yaxis.siunit(), y.siunit()))
+        fx = float(fx)
+        fy = float(fy)
+        tx = x.value * fx
+        ty = y.value * fy
+        tx = (min(tx)+max(tx))/2
+        ty = max(ty)
+        ty += 0.05 * ydif
+
+        pylab.text(tx, ty, '({})'.format(fitnum), color=Plot.fitcolors[(fitnum-1)%6], horizontalalignment='center', verticalalignment='bottom')
 
 
+      pylab.figtext(*xy, s=b,bbox=dict(facecolor='w', edgecolor='black',
+      pad=10), multialignment='left', **align)
 
-"""  
+
+    if self._grid: pylab.grid()
+    pylab.xscale(self._xscale)
+    pylab.yscale(self._yscale)
+    if self._leg: pylab.legend()
+
+    if self.makex(): pylab.xlabel(self.makex())
+    if self.makey(): pylab.ylabel(self.makey())
+
+    self._made = True
+    return self # cascade
+
+
+def peak(data):
+  pass
+
+################################################################################
+# Fit
 class ModelFit(object):
 
+  def push(self, id):
+    ephys.texport.push('fit_{}_eq'.format(id), self.eq())
+    ephys.texport.push('fit_{}_chi'.format(id), '{:.3f}'.format(self.chi))
+    for i in range(len(self.parameters)):
+      ephys.texport.push('fit_{}_{}'.format(id, i), self.parameters[i].tex())
+  
   def __init__(self, *parameters, func=None, modeq=''):
+    """
+    #n, #x and #y can be used in modeq to denote the n-th parameter.
+    """
     if func is not None: self.func = func
     for p in parameters:
       if not isinstance(p, Quantity):
@@ -154,6 +579,10 @@ class ModelFit(object):
     self.parameters = parameters
     self.model = odr.Model(lambda p, x: self.func(x, *p))
     self.modeq = modeq
+    self.sr = -1
+    self.chi = -1
+    self.xo = None
+    self.yo = None
 
   def covmatrix():
     return self.cov
@@ -161,8 +590,7 @@ class ModelFit(object):
   def func(x, *pvalues):
     return 0 
 
-
-  def puStr(q):
+  """  def puStr(q):
     token = q.preferredUnit
     over = []
     under = []
@@ -181,20 +609,27 @@ class ModelFit(object):
       pUnit = ' '.join(over)
     pUnit = r'\,' + pUnit
 
-    return pUnit
+    return pUnit"""
 
-  def fit(self, x, y, estimate=True, maxit=None, fullinfo=False):
+  def xtrim(self, x, y, r):
+    if r is None: return x, y
+
+    if isinstance(r, RPicker):
+      r = r.getRange(x, y)
+    l, u = r
+    r = (l <= x.value) * (x.value <= u)
+    return x[r], y[r]
+
+  def fit(self, x, y, estimate=True, maxit=None, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
     if not isinstance(x, Quantity) or not isinstance(y, Quantity):
       raise TypeError('Data must be quantities')
 
-    if estimate:
-      p0 = self.estimate(x, y)
-    else:
-      p0 = [p.value for p in self.parameters]
+    if estimate: self.estimate(x, y)
+    p0 = [p.value for p in self.parameters]
 
     self.xo = x
     self.yo = y
-
 
     sx = x.stddev()
     x  = x.value
@@ -223,101 +658,545 @@ class ModelFit(object):
  
     stopreason = result.info
     if stopreason > 3:  # on error
-      stopreason = result.stopreason
-      warnings.warn('ODR fit did fail! ' + stopreason)
+      warnings.warn('ODR fit did fail! ' + str(stopreason))
+      chi = -1
+    else:
+      for p, b, sb in zip(self.parameters, result.beta, result.sd_beta):
+        p.value    = b
+        p.variance = sb**2
+      ndf = len(sx) - len(result.beta)
+      if ndf == 0:
+        chi = 0
+      else:
+        chi = result.sum_square/ndf
 
     
-    dof = len(sx) - len(result.beta)
     self.cov = result.cov_beta
-    for p, b, sb in zip(self.parameters, result.beta, result.sd_beta):
-      p.value    = b
-      p.variance = sb
 
     # make a unit check
 
-    chi = result.sum_square/dof
     self.chi = chi
     self.sr = stopreason
-    if fullinfo: 
-      return chi, stopreason, result
-    else:
-      return chi, stopreason
-
-
-  def plot(self, title="", clear=True):
-    if clear: pylab.clf()
-    pylab.xlim(min(self.x), max(self.x)) # add margin
-    pylab.ylim(min(self.y), max(self.y)) # add margin
-
-    xlab = []
-    if self.xo.label: xlab.append(self.xo.label)
-    if self.xo.latex:
-      xlab.append('$' + self.xo.latex + '$')
-    elif self.xo.symbol:
-      xlab.append('$' + self.xo.symbol + '$')
-
-    #xlab.append( #TODO
-    if len(xlab): pylab.xlabel(' '.join(xlab))
-
-    ylab = []
-    if self.yo.label: ylab.append(self.yo.label)
-    if self.yo.latex:
-      ylab.append('$' + self.yo.latex + '$')
-    elif self.yo.symbol:
-      ylab.append('$' + self.yo.symbol + '$')
-    if len(ylab): pylab.ylabel(' '.join(ylab))
-
-    #einheit
-
-    pylab.errorbar(self.x, self.y, self.sy, self.sx, '.k', markersize=3)
-    x = np.linspace(min(self.x), max(self.x), 250)
-    y = self.func(x, *[p.value for p in self.parameters])
-    pylab.plot(x, y, '-b')
-
-    
-    leg = ['Fit: $' + self.modeq + '$'] + ['$' + p.tex() + '$' for p in self.parameters]
-    leg.append(r'$\chi^2/\mathrm{dof} = ' + ('{:.3f}'.format(self.chi)) + '$')
-
-    pylab.text(min(x), max(y), '\n'.join(leg), horizontalalignment='left',
-    verticalalignment='top')
+    self.info = result
 
     return self
 
-  def estimate(self, x, y):
-    return np.zeros(len(self.parameters)) + 1
+  def eq(self, x=None, y=None):
+    if x is not None:
+      xsl = x.latex or x.symbol
+    elif self.xo is not None:
+      xsl = self.xo.latex or self.xo.symbol  or 'x'
+    else:
+      xsl = 'x'
 
-  def show(self):
-    pylab.show()
+    if y is not None:
+      ysl = y.latex or y.symbol
+    elif self.yo is not None:
+      ysl = self.yo.latex or self.yo.symbol or 'y'
+    else:
+      ysl = 'y'
 
-  def savefig(self, *args, **kwds):
-    pylab.savefig(*arg, **kwds)
+    s = self.modeq
+    s = s.replace('#x', xsl)
+    s = s.replace('#y', ysl)
+    for i in range(len(self.parameters)):
+      p = self.parameters[i]
+      s = s.replace('#{}'.format(i), p.latex or p.symbol or r'\beta_{{{}}}'.format(i))
+    return s
 
-class Plot:
+  def picker(self, x, y, id):
+    if not isinstance(x, Quantity) or not isinstance(y, Quantity):
+      raise TypeError('Data must be quantities')
+    for i in len(self.parameters):
+      self.parameters[i] = Picker('{}_{}'.format(id, i)).getValue(x, y)
+    return self
+      
 
-  def __init__(self, title=""):
-    pass
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    if not isinstance(x, Quantity) or not isinstance(y, Quantity):
+      raise TypeError('Data must be quantities')
+    self.xo = x
+    self.yo = y
+    return self
+
+  def __str__(self):
+    text = '-'*80 + '\n'
+    text += 'Fit: {}\n\n'.format(self.eq())
+    if self.sr >= 3:
+      text += 'fit failed ({})!\n'.format(self.sr)
+    for p in self.parameters:
+      text += '  {}\n'.format(p.str())
+    text += '  chi^2/ndf = {:.2f}\n'.format(self.chi)
+    text += '-'*80 + '\n'
+    return text
+
+class PolynomFit(ModelFit):
+  def __init__(self, *coef, y='#y = '):
+    eq = []
+    for i in range(len(coef)):
+      if i == 0:
+        eq.append('#{}'.format(i))
+      elif i == 1:
+        eq.append('#{} #x'.format(i))
+      else:
+        eq.append('#{0:} #x^{{ {0:} }}'.format(i))
+
+    eq = y + (' + '.join(eq))
     
+    super().__init__(*coef, modeq=eq)
 
 
+  def func(self, x, *coef):
+    r = 0
+    for i in range(len(coef)):
+      if i%2==0: sign = 1
+      else:
+        if isinstance(x, Quantity):
+          sign = 1.*(x.value>0) -1.* (x.value<0)
+        else:
+          sign = 1.*(x>0) - 1.*(x<0)
+      r += coef[i] * sign * abs(x)**i 
+    return r
 
-def peak(data):
-  pass
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    for p in self.parameters: p.value = 0
 
+    #m = (max(y.value) - min(y.value)) / (max(x.value) - min(x.value))
+    #c = min(y.value) - m * min(x.value)
+    m = (y.value[-1] - y.value[0]) / (x.value[-1] - x.value[0])
+    c = y.value[0] - m * x.value[0]
 
-class SinFit(ModelFit):
+    self.parameters[0].value = c
+    self.parameters[1].value = m
 
-  def __init__(self, amplitude, frequency, phase):
-    self.func = np.sin
-    self.parameters = parameters
+    self.xo = x
+    self.yo = y
+
+    return self
+
+"""class GaussCFit(ModelFit):
+  
+  def __init__(self, A, mu, sigma, c, x='---', y=''):
+    def func(x, A, mu, sigma, c):
+      return A * np.exp(-0.5 * (x-mu)**2 / sigma**2) + c
+
+    eq = r'{}\cdot \exp \left(-\frac{{1}}{{2}} ({}-{})^2 / {}^2\right) + {}'.format(A.latex or
+    A.symbol, x, mu.latex or mu.symbol, sigma.latex or sigma.symbol,
+    c.latex or c.symbol)
+    
+    super().__init__(A, mu, sigma, c, func=func, modeq=eq)
+
+  def fit(self, x, y, estimate=True, maxit=None):
+    self.modeq = self.modeq.replace('---', x.latex or x.symbol)
+    return super().fit(x, y, estimate, maxit)
 
   def estimate(self, x, y):
-    #make fft
-    pass
+    c   = min(y.value)
+    A   = max(y.value) -min(y.value)
+    mu  = max(zip(x.value, y.value), key=lambda a: a[1])[0]
+    sigma = (max(x.value) - min(x.value)) * (sum(y.value-c)/len(y.value)/A) 
+   
+    self.parameters[0].value = A
+    self.parameters[1].value = mu
+    self.parameters[2].value = sigma
+    self.parameters[3].value = c
+
+    self.xo = x
+    self.yo = y
+
+    return self"""
+
+class GaussFit(ModelFit):
+  def func(self, x, A, mu, sigma):
+    return A * data.exp(-0.5 * (x-mu)**2 / sigma**2)
+  
+  def __init__(self, A, mu, sigma, y='#y = '):
+    eq = y + r'#0 \cdot \exp \left(-\frac{(#x-#1)^2}{2 #2^2} \right)'
+    super().__init__(A, mu, sigma, func=self.func, modeq=eq)
+
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    A  = max(zip(y.value, abs(y.value)), key=lambda a: a[1])[0]
+    mu  = max(zip(x.value, abs(y.value)), key=lambda a: a[1])[0]
+    sigma = (max(x.value) - min(x.value)) * (sum(y.value)/len(y.value)/A) / 2
+   
+    self.parameters[0].value = A
+    self.parameters[1].value = mu
+    self.parameters[2].value = sigma
+
+    self.xo = x
+    self.yo = y
+
+    return self
+
+class GaussCFit(ModelFit):
+  def func(self, x, A, mu, sigma, offset):
+    return A * data.exp(-0.5 * (x-mu)**2 / sigma**2) + offset
+  
+  def __init__(self, A, mu, sigma, offset, y='#y = '):
+    eq = y + r'#0 \cdot \exp \left(-\frac{(#x-#1)^2}{2 #2^2} \right) + #3'
+    super().__init__(A, mu, sigma, offset, modeq=eq)
+
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    offset = (y.value[0] + y.value[-1]) / 2
+    self.parameters[3].value = offset
+    _y = Quantity()
+    _y.value = y.value - offset
+    mf = GaussFit(*self.parameters[:3])
+    mf.estimate(x, _y)
+    return self
+
+class GaussCLFit(ModelFit):
+  def func(self, x, A, mu, sigma, offset, b):
+    return A * data.exp(-0.5 * (x-mu)**2 / sigma**2) + offset + b * x
+  
+  def __init__(self, A, mu, sigma, offset, b, y='#y = '):
+    eq = y + r'#0 \cdot \exp \left(-\frac{(#x-#1)^2}{2 #2^2} \right) + #3 + #4 #x'
+    super().__init__(A, mu, sigma, offset, b, modeq=eq)
+
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    self.xo = x
+    self.yo = y
+    dy = y.value[-1] - y.value[0]
+    dx = x.value[-1] - x.value[0]
+    self.parameters[4].value = dy/dx
+    _y = Quantity()
+    _y.value = y.value - dy/dx * (x.value-x.value[0])
+    mf = GaussCFit(*self.parameters[:4])
+    mf.estimate(x, _y)
+    return self
+
+class LorentzFit(ModelFit):
+  def func(self, x, A, mu, gamma):
+    return A * gamma**2 / 4 / ( (x-mu)**2 + gamma**2/4)
+  
+  def __init__(self, A, mu, gamma, y='#y = '):
+    eq = y + r'#0 \frac{ #2^2 \!/ 4}{ (#x-#1)^2 \!+ #2^2\!/4}'
+    super().__init__(A, mu, gamma, func=self.func, modeq=eq)
+
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    A  = max(zip(y.value, abs(y.value)), key=lambda a: a[1])[0]
+    mu  = max(zip(x.value, abs(y.value)), key=lambda a: a[1])[0]
+    sigma = (max(x.value) - min(x.value)) * (sum(y.value)/len(y.value)/A) / 2
+   
+    self.parameters[0].value = A
+    self.parameters[1].value = mu
+    self.parameters[2].value = sigma
+
+    self.xo = x
+    self.yo = y
+
+    return self
+
+class LorentzCFit(ModelFit):
+  def func(self, x, A, mu, gamma, offset):
+    return A * gamma**2 / 4 / ( (x-mu)**2 + gamma**2/4) + offset
+  
+  def __init__(self, A, mu, gamma, offset, y='#y = '):
+    eq = y + r'#0 \frac{ #2^2 \!/ 4}{ (#x-#1)^2 \!+ #2^2\!/4} + #3'
+    super().__init__(A, mu, gamma, offset, func=self.func, modeq=eq)
+
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    self.xo = x
+    self.yo = y
+    offset = (y.value[0] + y.value[-1]) / 2
+    self.parameters[3].value = offset
+    _y = Quantity()
+    _y.value = y.value - offset
+    mf = LorentzFit(*self.parameters[:3])
+    mf.estimate(x, _y)
+    return self
+
+
+class LorentzCLFit(ModelFit):
+  def func(self, x, A, mu, gamma, offset, b):
+    return A * gamma**2 / 4 / ( (x-mu)**2 + gamma**2/4) + offset + b * x
+  
+  def __init__(self, A, mu, gamma, offset, b, y='#y = '):
+    eq = y + r'#0 \frac{ #2^2 \!/ 4}{ (#x-#1)^2 \!+ #2^2\!/4} + #3 + #4 #x'
+    super().__init__(A, mu, gamma, offset, b, func=self.func, modeq=eq)
+
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    self.xo = x
+    self.yo = y
+    dy = y.value[-1] - y.value[0]
+    dx = x.value[-1] - x.value[0]
+    self.parameters[4].value = dy/dx
+    _y = Quantity()
+    _y.value = y.value - dy/dx * (x.value-x.value[0])
+    mf = LorentzCFit(*self.parameters[:4])
+    mf.estimate(x, _y)
+    return self
+
+
+
+class ErfFit(ModelFit):
+  def func(self, x, A, mu, sigma):
+    return A * data.erf((x-mu)/sigma)
+  
+  def __init__(self, A, mu, sigma, y='#y = '):
+    eq = y + r'#0 \cdot \mathrm{erf} \left(\frac{#x-#1}{#2}\right)'
+    super().__init__(A, mu, sigma, func=self.func, modeq=eq)
+
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    A   = (max(y.value) -min(y.value)) / 2
+    lower= y.value < (max(y.value)+min(y.value))/2
+    mu  = max(zip(x.value[lower], y.value[lower]), key=lambda a: a[1])[0]
+    sigma = (max(x.value) - min(x.value)) / 2
+    if y.value[0] > y.value[-1]:
+      sigma *= -1
+
+    self.parameters[0].value = A
+    self.parameters[1].value = mu
+    self.parameters[2].value = sigma
+
+
+    self.xo = x
+    self.yo = y
+
+    return self
+
+class ErfCFit(ModelFit):
+  def func(self, x, A, mu, sigma, offset):
+    return A * data.erf((x-mu)/sigma) + offset
+  
+  def __init__(self, A, mu, sigma, offset, y='#y = '):
+    eq = y + r'#0 \cdot \mathrm{erf} \left( \frac{#x-#1}{#2}\right) + #3'
+    super().__init__(A, mu, sigma, offset, func=self.func, modeq=eq)
+
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    self.xo = x
+    self.yo = y
+    offset  = y.value.mean()
+    self.parameters[3].value = offset
+    _y = Quantity()
+    _y.value = y.value - offset
+    mf = ErfFit(*self.parameters[:3])
+    mf.estimate(x, _y)
+    return self
+
+
+class LorentzCLFit(ModelFit):
+  def func(self, x, A, mu, sigma, offset, b):
+    return A * data.erf((x-mu)/sigma) + offset + b * x
+  
+  def __init__(self, A, mu, sigma, offset, b, y='#y = '):
+    eq = y + r'#0 \cdot \mathrm{erf} \left(\frac{#x-#1}{#2}\right) + #3 + #4 #x'
+    super().__init__(A, mu, sigma, offset, b, func=self.func, modeq=eq)
+
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    self.xo = x
+    self.yo = y
+    dy = y.value[-1] - y.value[0]
+    dx = x.value[-1] - x.value[0]
+    self.parameters[4].value = dy/dx
+    _y = Quantity()
+    _y.value = y.value - dy/dx * (x.value-x.value[0])
+    mf = ErfCFit(*self.parameters[:4])
+    mf.estimate(x, _y)
+    return self
+
+class VoigtFit(ModelFit):
+  def func(self, x, A, mu, gamma, sigma):
+    z = ( (x-mu) + gamma * 1j) / (sigma * math.sqrt(2))
+    if isinstance(z, Quantity): z = z.value
+    return A* wofz(z).real #/ (sigma * math.sqrt(2*math.pi))
+
+  def __init__(self, A, mu, gamma, sigma, y='#y = '):
+    eq = y + r'\mathrm{Voigt}'
+    super().__init__(A, mu, sigma, gamma,  func=self.func, modeq=eq)
+
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    A  = max(zip(y.value, abs(y.value)), key=lambda a: a[1])[0]
+    mu  = max(zip(x.value, abs(y.value)), key=lambda a: a[1])[0]
+    sigma = (max(x.value) - min(x.value)) * (sum(y.value)/len(y.value)/A) / 2
+   
+    self.parameters[0].value = A*2
+    self.parameters[1].value = mu
+    self.parameters[2].value = sigma/2
+    self.parameters[3].value = sigma/2
+
+    self.xo = x
+    self.yo = y
+
+    return self
+
+class VoigtCFit(ModelFit):
+  def func(self, x, A, mu, gamma, sigma, offset):
+    z = ( (x-mu) + gamma * 1j) / (sigma * math.sqrt(2))
+    if isinstance(z, Quantity): z = z.value
+    return A*wofz(z).real +offset#/ (sigma * math.sqrt(2*math.pi)) + offset
+  
+  def __init__(self, A, mu, gamma, sigma, offset, y='#y = '):
+    eq = y + r'\mathrm{Voigt} + #4'
+    super().__init__(A, mu, gamma, sigma, offset, func=self.func, modeq=eq)
+
+  def estimate(self, x, y, xrange=None):
+    x, y = self.xtrim(x, y, xrange)
+    self.xo = x
+    self.yo = y
+    offset = (y.value[0] + y.value[-1]) / 2
+    self.parameters[4].value = offset
+    _y = Quantity()
+    _y.value = y.value - offset
+    mf = VoigtFit(*self.parameters[:4])
+    mf.estimate(x, _y)
+    return self
+
+
+class Gauge(data.Storable):
+  def __init__(self, y, x, n=1):
+    self.p = []
+    self.x = x
+    self.y = y
+    xU = Quantity(x.siunit())
+    yU = Quantity(y.siunit())
+    for i in range(n+1):
+      q = yU / xU**i
+      q.name(latex='a_{}'.format(i))
+      self.p.append(q)
     
+    self.f = PolynomFit(*self.p)
+    self.f.fit(x, y)
+  def plot(self):
+    p = Plot()
+    p.error(self.x, self.y)
+    p.fit(self.f)
+    return p
+
+  def __call__(self, x):
+    q = self.f.func(x, *self.p)
+    q.name(label=self.y.label, latex=self.y.latex, symbol=self.y.symbol)
+    return q
+
+class RPicker(object):
+  storage = None
+
+  def __init__(self, id):
+    self.id = str(id)
+    if not RPicker.storage:
+      #try:
+      RPicker.storage = shelve.open('{}.picker'.format(sys.argv[0]) )
+      #except Exception:
+      #  warnings.warn('Can not store range picks!') 
 
 
-class SinFit_L(SinFit):
-  pass
+  def getRange(self, x, y):
+    new = '--RPicker-new' in sys.argv[1:]
+    new = new or '--RPicker-new-{}'.format(self.id) in sys.argv[1:]
+    if (not new) and RPicker.storage and self.id in RPicker.storage:
+      print(' *** RANGE PICKER for "{}" values restored'.format(self.id))
+      r = RPicker.storage[self.id]
+      print('     from {:.5g} to {:.5g}'.format(r[0], r[1]))
+      return r
+    else:
+      return self.promt(x, y)
 
-class SinFit_C(SinFit):
-  pass
+  def promt(self, x, y):
+    p = Plot()
+    p.error(x, y, ecolor='0.3')
+    p.make()
+    pylab.ion()
+    p.show()
+    pylab.ioff()
+    print(' *** RANGE PICKER for "{}":'.format(self.id))
+    if RPicker.storage is not None and self.id in RPicker.storage:
+      r = RPicker.storage[self.id]
+      print('     previously from {:.5g} to {:.5g}'.format(r[0], r[1]))
+
+    xunit = p._xaxis.sprefunit()
+    lower = input('     lower limit ({}) = '.format(xunit))
+    upper = input('     upper limit ({}) = '.format(xunit))
+    print('')
+
+    lower = float(lower)
+    upper = float(upper)
+
+    f = Quantity(xunit) / Quantity(unit=x.uvec)
+    f = float(f)
+    lower *= f
+    upper *= f
+
+    if RPicker.storage is not None:
+      RPicker.storage[self.id] = (lower, upper)
+      print('     stored...')
+
+    return lower, upper
+
+class Table(object):
+  """
+  only for tex
+  """
+
+  def __init__(self, *cols, units=None, align=None):
+    self.cols = cols
+    if align is None:
+      self.align = 'l'*len(cols)
+    else:
+      self.align = align
+
+    if units is not None:
+      if len(cols) != len(units):
+        raise ValueError('Number of cols {} differs from number of units {}.'.format(len(cols), len(units)))
+      self.units = []
+      for u in units:
+        if isinstance(u, str):
+          self.units.append(Quantity(u))
+        else:
+          self.units.append(None)
+    else:
+      self.units = [None]*len(cols)
+    self.rows = []
+
+  def append(self, *items):
+    if len(items) != len(self.cols):
+      raise ValueError('Number of cols {} differs from number of items {}.'.format(len(self.cols), len(items)))
+    for i, u in zip(items, self.units):
+      if isinstance(u, Quantity) and not isinstance(i, Quantity):
+        raise ValueError('Item for column with a units must be a Quantity')
+
+    self.rows.append(items)
+  
+  def __str__(self):
+    tab = []
+    tab.append("  \\begin{tabular}{"+self.align+"}")
+    head = []
+    for h, u in zip(self.cols, self.units):
+      if u is not None:
+        head.append("{} in ${}$".format(h, u.sprefunit(latex=True)))
+      else:
+        head.append(h)
+    tab.append(' & '.join(head) + r'\\\toprule[1.5pt]')
+
+    for r in self.rows:
+      row = []
+      for i,u in zip(r, self.units):
+        if i is None:
+          row.append('')
+        elif isinstance(u, Quantity):
+            row.append('${}$'.format((i / u).tex()))
+        elif isinstance(i, Quantity):
+          row.append('${}$'.format(i.tex()))
+        else:
+          row.append(i)
+      tab.append(' & '.join(row) + r'\\')
+    tab.append('\\bottomrule[1.5pt] \end{tabular}')
+    
+    return '\n'.join(tab)
+
+  def push(self, id):
+    ephys.texport.push('tab_{}'.format(id), str(self))
+    
+     
+    

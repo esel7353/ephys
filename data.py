@@ -38,7 +38,8 @@ import scipy.constants as sc
 import collections
 import shelve
 import copy
-from texport import push
+import scipy.special as ss
+from ephys.texport import push
 
 SELF_PREFERRED = '--this should always fail when parsed-- 00'
 SCALE_EQUALLY = '--this should always fail when parsed-- 01'
@@ -47,9 +48,37 @@ DO_NOT_SCALE = False
 SCALE_HOOD = '--this should always fail when parsed-- 04'
 AUTO = '--this should always fail when parsed-- 05'
 
+def Q(unit, latex, label='', symbol=''):
+  """
+  mesmerizing: u-lax la-s
+  """
+  return Quantity(unit=unit, latex=latex, label=label, symbol=symbol)
 
 ################################################################################
 # Classes
+
+class Storable(object):
+  storage = None
+
+  def restore(id):
+    if not Storable.storage:
+      Storable.storage = shelve.open('ephys.db')
+
+    return Storable.storage[id]
+
+  def store(self, id): 
+    if not Storable.storage:
+      Storable.storage = shelve.open('ephys.db')
+
+    Storable.storage[id] = self
+
+  def dir():
+    if not Storable.storage: 
+      Storable.storage = shelve.open('ephys.db')
+
+    for key in Storable.storage:
+      print('{:16}->  {}'.format(key, repr(Storable.storage[key])))
+  
 
 class IncompatibleUnits(TypeError): pass
 
@@ -62,7 +91,7 @@ class ParticipantsAreNotIndependend(Exception):
     'Quantity.yesIKnowTheDangersAndPromiseToBeCareful()' once every
     session."""
 
-class Quantity(object):
+class Quantity(Storable):
   """
   This class is to represent real experimental data. This means a value,
   its standard deviation and a unit can be stored together. Due to excessive
@@ -129,6 +158,7 @@ class Quantity(object):
   prefixSymbol = []
   prefixFactor = []
   prefixLatex  = []
+  prefixDoNotUse  = []
 
   # unit storage
   unitLabel  = []
@@ -222,7 +252,7 @@ class Quantity(object):
 
     return Quantity(1, unit=uvec).name(symbol, label, latex)
 
-  def addPrefix(label, symbol, factor, latex=''):
+  def addPrefix(label, symbol, factor, latex='', doNotUse=False):
     """
     IF YOU WANT TO USE A UNIT SYSTEM, WHICH CAN BE REPRESENTED IN SI UNITS,
     YOU DON'T NEED TO CARE ABOUT THIS METHOD.
@@ -262,6 +292,7 @@ class Quantity(object):
     Quantity.prefixSymbol.append(symbol)    
     Quantity.prefixLatex.append(latex)    
     Quantity.prefixFactor.append(factor)
+    Quantity.prefixDoNotUse.append(doNotUse)
 
     return Quantity(factor).name(symbol, label, latex)
 
@@ -513,7 +544,7 @@ class Quantity(object):
       # >>> Quantity(unit=(1,0,0,0,0,0,0,0,0))
       if len(unit) != Quantity.dim:
         raise Exception('Unit vector length missmatch: {} dim base, but {} given!'.format(Quantity.dim, len(unit)))
-      self.uvec = unit
+      self.uvec = np.array(unit)
     elif isinstance(unit, (int, float)):
       ### >>> Quantity(unit=1)
       self.value    *= unit
@@ -684,7 +715,11 @@ class Quantity(object):
       if isinstance(b, np.ndarray) and not self.unitless():
         raise IncompatibleUnits('Can only raise to the numpy-array-power, if the raised value is unitless.')
       value     = a**b
-      variance  = b**2 * a**(2*b-2) * self.variance + a**(2*b) * np.log(a)**2 * other.variance
+      if (isinstance(other.variance, np.ndarray) and (other.variance==0).all()) or (not isinstance(other.variance, np.ndarray) and other.variance==0):
+        variance  = b**2 * a**(2*b-2) * self.variance 
+      else:
+        variance  = b**2 * a**(2*b-2) * self.variance + a**(2*b) * np.log(np.abs(a))**2 * other.variance
+
       if isinstance(b, np.ndarray):
         uvec = np.zeros(Quantity.dim, dtype='int8')
       else:
@@ -708,7 +743,7 @@ class Quantity(object):
       if not other.unitless():
         raise IncompatibleUnits('Relative error must not have a unit.')
       std = self.value * other.value
-      return self + Quantity(0, stddev=std, unit=self.uvec, label=self.label, symbol=self.symbol, latex=self.latex)
+      return (self + Quantity(0, stddev=std, unit=self.uvec)).name(label=self.label, symbol=self.symbol, latex=self.latex).prefunit(self.sprefunit())
     elif isinstance(other, (int, float, collections.Iterable)):
       # >>> x % 0.4
       return self % Quantity(other)
@@ -726,7 +761,7 @@ class Quantity(object):
     if isinstance(other, Quantity):
       # >>> x | y
       try:
-        return self + Quantity(0, stddev=other.value, unit=other.uvec, label=self.label, symbol=self.symbol, latex=self.latex)
+        return (self + Quantity(0, stddev=other.value, unit=other.uvec)).name(label=self.label, symbol=self.symbol, latex=self.latex).prefunit(self.sprefunit()) 
       except IncompatibleUnits:
         raise IncompatibleUnits('Can not add absolute error given in {} for a quantity measured in {}.'.format(other.siunit(), self.siunit()))
 
@@ -839,8 +874,9 @@ class Quantity(object):
     """
     return np.sqrt(self.variance)
 
-  def siunit(self):
+  def siunit(self, latex=False):
     """
+    TODO latex
     Resurns a string prepresenation of its unit. The
     representations is a product of powers of the base
     units.
@@ -852,12 +888,26 @@ class Quantity(object):
     over = []
     under = []
     for b, p in zip(Quantity.baseSymbol, self.uvec):
+      if latex: b = r'\mathrm{' + b + '}'
       if p > 0:
         over.append(b + ('^'+str(p) if p>1 else ''))
       if p < 0:
         under.append(b + ('^'+str(-p) if p<-1 else ''))
     if len(over) == 0 and len(under) != 0: over.append('1')
-    return ' '.join(over) + (' / ' + ' '.join(under) if len(under)>0 else '')
+
+    if latex:
+      if len(under)>0:
+        unit = '\\frac{' + (' '.join(over) or '1') + '}{' + (' '.join(under)) + '}'
+      else:
+        unit = ' '.join(over)
+      unit = r'\,' + unit if unit else ''
+    else:
+      if len(under)>0:
+        unit = (' '.join(over) or '1') + ' / ' + (' '.join(under))
+      else:
+        unit = ' '.join(over)
+
+    return unit
 
   def __repr__(self): 
     """
@@ -929,10 +979,10 @@ class Quantity(object):
     
     # extract the selected properties if multi-valued, or returns the
     # single-value
-    if hasattr(self.value, '__getitem__'): value = self.value[key]
+    if hasattr(self.value, '__len__'): value = self.value[key]
     else: value = self.value
 
-    if hasattr(self.variance, '__getitem__'): variance = self.variance[key]
+    if hasattr(self.variance, '__len__'): variance = self.variance[key]
     else: variance = self.variance
   
     # naming properties are always iterable because they are strings. To
@@ -947,7 +997,7 @@ class Quantity(object):
     else: latex = self.latex
   
     # build item/slice
-    return Quantity(value, variance=variance, unit=self.uvec, symbol=symbol, label=label, latex=latex)
+    return Quantity(value, variance=variance, unit=self.uvec, symbol=symbol, label=label, latex=latex).prefunit(self.sprefunit()) 
 
   def __setitem__(self, key, other):
     """
@@ -1143,10 +1193,10 @@ class Quantity(object):
     sv, se = Quantity._isaMagnitude(value, error)
     stilde = Quantity._isaScaleExponent(svec, ulist)
 
-    if sv is not None: V = abs(sv + stilde)**1.2
+    if sv is not None: V = abs(sv + stilde - 2)**1.2
     else:              V = 0
 
-    if se is not None: E = (se + stilde + 1)**2 / 4
+    if se is not None: E = (se + stilde + 0)**2 / 4
     else:              E = 0 
 
     if sv is None: E *= 3
@@ -1154,6 +1204,8 @@ class Quantity(object):
 
 
     U =  sum([abs(u.exponent**1.1 * s) for u, s in zip(ulist, svec[1:])])
+    U += abs(svec[0])
+    if abs(svec[0]) <= 2: U += 2
     #if sum([abs(s) for s in svec[1:]]) > 0:
     #U += sum([abs(s) for s in svec])/100
 
@@ -1161,6 +1213,53 @@ class Quantity(object):
 
   def _isaScaleFactor(svec, ulist):
     return 10**(Quantity._isaScaleExponent(svec, ulist))
+
+  def strunit(unitlist, latex=False):
+    for t in unitlist:
+      if isinstance(t, _VaerToken):
+        raise ValueError("Unit specification must not contain a ValueToken.")
+      assert(isinstance(t, _UnitToken))
+
+    over = []
+    under = []
+    for t in unitlist:
+      p = t.exponent
+      if t.prefix == 'u' and latex:
+        b = r'\mu ' + t.symbol
+      else:
+        b = t.prefix + t.symbol
+
+      if latex:
+        b = '\\mathrm{' + b + '}'
+      if p > 0:
+        if latex:
+          over.append(b + ('^{'+str(p)+'}' if p>1 else ''))
+        else:
+          over.append(b + ('^'+str(p) if p>1 else ''))
+      if p < 0:
+        if latex:
+          under.append(b + ('^{'+str(-p)+'}' if p<-1 else ''))
+        else:
+          under.append(b + ('^'+str(-p) if p<-1 else ''))
+
+    if latex:
+      if len(under)>0:
+        pUnit = '\\frac{' + (' '.join(over) or '1') + '}{' + (' '.join(under)) + '}'
+      else:
+        pUnit = ' '.join(over)
+    else:
+      if len(under)>0:
+        pUnit = (' '.join(over) or '1') + ' / ' + (' '.join(under))
+      else:
+        pUnit = ' '.join(over)
+
+    return pUnit
+
+  def sprefunit(self, latex=False):
+    if self.preferredUnit:
+      return Quantity.strunit(self.preferredUnit, latex)
+    else:
+      return self.siunit(latex)
 
   def _isaScaleExponent(svec, ulist):
     """
@@ -1187,7 +1286,10 @@ class Quantity(object):
 #  def _isaOptimatize(self, ....):
 
   def _isaNeighbors(svec, unitlist, hood):
-    pfactors = Quantity.prefixFactor
+    pfactors = []
+    for f, nu in zip(Quantity.prefixFactor, Quantity.prefixDoNotUse):
+      if not nu: pfactors.append(f)
+
     if 1 not in pfactors: pfactors.append(1)
     pexponents = sorted([math.log10(f) for f in pfactors])
     pexponentsNP = np.array(pexponents)
@@ -1236,6 +1338,7 @@ class Quantity(object):
     return neighbor
 
   def _isaOptimize(value, error, svec, ulist, hood):
+    threshold = 2
     prev = Quantity._isaPenalty(value, error, ulist, svec)
     init = prev
     mins = svec
@@ -1244,7 +1347,7 @@ class Quantity(object):
       environment = [ (n, Quantity._isaPenalty(value, error, ulist, n)) for n in neighbors]
       direction = min(environment, key=lambda e: e[1])
       if direction[1] >= prev:
-        if prev + 2 < init:
+        if prev + threshold < init:
           return direction[0]
         else:
           return svec
@@ -1361,6 +1464,11 @@ class Quantity(object):
 
     ######################################################################
     # make unit str
+    pUnit = Quantity.strunit(token, latex)
+    if latex and pUnit:
+      pUnit = '\\,' + pUnit
+# TODO to be replaced by strunit()
+    """
     over = []
     under = []
     for t in token:
@@ -1381,6 +1489,7 @@ class Quantity(object):
       pUnit = r'\,' + pUnit
     else:
       pUnit = ' '.join(over) + (' / ' + ' '.join(under) if len(under)>0 else '')
+      """
 
     ######################################################################
     # make naming
@@ -1391,6 +1500,7 @@ class Quantity(object):
         name = '\\mathrm{' + self.label + '}:'
       elif self.label:
         name = self.label + ':'
+      elif self.latex:        name = self.latex + ' ='
 
       else: name = ''
     else: name = ''
@@ -1439,24 +1549,6 @@ class Quantity(object):
     latex=True)
 
 
-  def restore(id):
-    if not Quantity.storage:
-      Quantity.storage = shelve.open('quantities.db')
-
-    return Quantity.storage[id]
-
-  def store(self, id): 
-    if not Quantity.storage:
-      Quantity.storage = shelve.open('quantities.db')
-
-    Quantity.storage[id] = self
-
-  def dir():
-    if not Quantity.storage: 
-      Quantity.storage = shelve.open('quantities.db')
-
-    for key in Quantity.storage:
-      print('{:16}->  {}'.format(key, repr(Quantity.storage[key])))
   
   def texport(self, id, *args, **kwds): 
     s = self.tex(*args, **kwds)
@@ -1509,7 +1601,7 @@ class Quantity(object):
     r          = '\s*(({}|{})(\s*$|{}(?!$)))*$'.format(rUnitToken, rVaerToken, rSeparator)
 
     # check overall format
-    if not re.match(r, s): raise ValueError('Unit string is not properly formatted!')
+    if not re.match(r, s): raise ValueError('Unit string is not properly formatted: {}'.format(s))
 
     # iterate over tokens
     for token in re.finditer('({}|{}|{})'.format(rUnitToken, rVaerToken, rSeparator), s):
@@ -1758,6 +1850,46 @@ class _VaerToken(object):
   def __repr__(self):
     return '<Vaer: {} +- {} >'.format(self.value, self.stddev)
 
+class BufferedQuantity(object):
+  def __init__(self, unit="", symbol="", label="", latex=""):
+    # test unit
+    Quantity._parseUnitString(unit)
+    self.unit = unit
+    self.symbol = symbol
+    self.label = label
+    self.latex = latex
+    self.value = []
+    self.error = []
+
+  def append(self, value, error=0):
+    if isinstance(value, Quantity):
+      ratio = Quantity(unit=value.uvec) / Quantity(self.unit)
+      if ratio.unitless():  ratio = float(ratio)
+      else: raise IncompatibleUnits("Can not append Quantity in {} to a Buffer in {}.".format(value.siunit(), self.unit))
+      self.value.append(value.value * ratio)
+      self.error.append(value.stddev() * ratio)
+    else:
+      self.value.append(value)
+      self.error.append(error)
+  
+  def quantity(self):
+    return Quantity(self.value, self.error, self.unit, label=self.label, latex=self.latex, symbol=self.symbol)
+
+
+  def __len__(self):
+    return len(self.value)
+
+  def __getitem__(self, index):
+    return Quantity(self.value[index], self.error[index], self.unit, label=self.label, latex=self.latex, symbol=self.symbol)
+
+  def __repr__(self):
+    return "<Buffer ({}): {} values measured in '{}' >".format(self.label or
+    self.symbol or self.latex or 'Unnamed', len(self), self.unit)
+
+  def __str__(self):
+    q = self.quantity().str()
+    return "Buffer:\n" + "\n".join( [" * " + line.strip() for line in q.split("\n")] )
+    
 ################################################################################
 def sin(x):
   if isinstance(x, Quantity): return x.calc(np.sin, np.cos)
@@ -1839,6 +1971,11 @@ def exp(x):
   if isinstance(x, Quantity): return x.calc(np.exp, np.exp)
   else:                       return np.exp(x) 
 
+def erf(x):
+  der = lambda x: 2 / math.sqrt(math.pi) * np.exp(-x**2)
+  if isinstance(x, Quantity): return x.calc(ss.erf, der)
+  else:                       return ss.erf(x) 
+
 def log(x):
   der = lambda x: 1 / x
   if isinstance(x, Quantity): return x.calc(np.log, der)
@@ -1875,8 +2012,8 @@ Pico  = Quantity.addPrefix('Pico', 'p', 1e-12)
 Nano  = Quantity.addPrefix('Nano', 'n', 1e-09)
 Micro = Quantity.addPrefix('Micro', 'u', 1e-06, latex='\mu')
 Milli = Quantity.addPrefix('Milli', 'm', 1e-03)
-Centi = Quantity.addPrefix('Centi', 'c', 1e-02)
-Deci  = Quantity.addPrefix('Deci', 'd', 1e-01)
+Centi = Quantity.addPrefix('Centi', 'c', 1e-02, doNotUse=True)
+Deci  = Quantity.addPrefix('Deci', 'd', 1e-01, doNotUse=True)
 Kilo  = Quantity.addPrefix('Kilo', 'k', 1e03)
 Mega  = Quantity.addPrefix('Mega', 'M', 1e06)
 Giga  = Quantity.addPrefix('Giga', 'G', 1e09)
@@ -1908,7 +2045,7 @@ Lux               = Quantity.addUnit('Lux', 'lx', Lumen / Meter**2)
 Becquerel         = Quantity.addUnit('Becquerel', 'Bq', Hertz)
 Gray              = Quantity.addUnit('Gray', 'Gy', Joule / Kilogram)
 Sievert           = Quantity.addUnit('Sievert', 'Sv', Gray)
-Degree            = Quantity.addUnit('Degree', '°', math.pi / 180 * Radian)
+Degree            = Quantity.addUnit('Degree', 'deg', math.pi / 180 * Radian, latex='{}^\circ')
 ArcMin            = Quantity.addUnit('ArcMin', '\'', Degree / 60)
 ArcSec            = Quantity.addUnit('ArcSec', '\"', ArcMin / 60)
 Liter             = Quantity.addUnit('Liter', 'l', Meter**3 / 1000)

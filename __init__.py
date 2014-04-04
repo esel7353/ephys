@@ -32,4 +32,6 @@
 # THE SOFTWARE.
 ################################################################################
 
-
+from ephys.data import *
+from ephys.analysis import *
+from ephys.texport import *

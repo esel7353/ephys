@@ -67,3 +67,4 @@ def push(id, s, file='pyexp.tex'):
     l = r'\ifthenelse{\equal{#1}{KEY}}{CODE}{}%'.replace('KEY', key)
     l = l.replace('CODE', data[key])
     print(l, file=f)
+  print(r'}', file=f)
