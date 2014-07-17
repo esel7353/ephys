@@ -3,8 +3,7 @@
 from setuptools import setup
 
 setup(name='ephys',
-      install_requires=['matplotlib', 'scipy', 'numpy', 'pylab',
-      'shelve'],
+      install_requires=['matplotlib', 'scipy', 'numpy'],
       version='0.1',
       description='some physics',
       author='Frank Sauerburger',
@@ -12,5 +11,5 @@ setup(name='ephys',
       url='sauerburger.com',
       packages=['ephys'],
       package_dir={'ephys': 'src'},
-      test_suite="test/data.py",
+      #test_suite="test/data.py",
      )

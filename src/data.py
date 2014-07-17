@@ -1440,7 +1440,10 @@ class Quantity(Storable):
             dig = 0
            
       if svec[0] != 0:
-        ssmult = '10^'+str(int(svec[0]))
+        if latex:
+          ssmult = '10^{'+str(int(svec[0]))+'}'
+        else:
+          ssmult = '10^'+str(int(svec[0]))
 
       ntoken = []
       for s, t in zip(svec[1:], token):
