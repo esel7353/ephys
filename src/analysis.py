@@ -398,7 +398,7 @@ class Plot:
 
   fitcolors = 'brgcmy'
 
-  def fit(self, mf, box=True):
+  def fit(self, mf, box=True, xmin=None, xmax=None):
     if not isinstance(mf, ModelFit):
       raise TypeError("Argument of Plot.fit must be a ModelFit, but {} given.".format(type(mf)))
 
@@ -410,8 +410,8 @@ class Plot:
       text += '  ${}$\n'.format(p.tex())
     text += '  $\chi^2/\mathrm{ndf} = ' +('{:.2f}$'.format(mf.chi))
 
-    xmin = min(mf.xo.value)
-    xmax = max(mf.xo.value)
+    xmin = xmin or min(mf.xo.value)
+    xmax = xmax or max(mf.xo.value)
 
     if box:
       self.box( (self._fitcount, text, mf.xo, mf.yo) )
