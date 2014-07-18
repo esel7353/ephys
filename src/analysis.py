@@ -774,7 +774,6 @@ class PolynomialFit(ModelFit):
     if len(self.parameters) > 2:
       for p in self.parameters[2:]:
         if p.value == 0: p.value = 0.1
-        else: print('value of', p.str(), 'not changed')
 
     self.xo = x
     self.yo = y
