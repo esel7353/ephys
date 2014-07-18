@@ -398,7 +398,7 @@ class Plot:
 
   fitcolors = 'brgcmy'
 
-  def fit(self, mf, box=True, xmin=None, xmax=None):
+  def fit(self, mf, box=True, bpos=None, balign=None, xmin=None, xmax=None):
     if not isinstance(mf, ModelFit):
       raise TypeError("Argument of Plot.fit must be a ModelFit, but {} given.".format(type(mf)))
 
@@ -414,7 +414,7 @@ class Plot:
     xmax = xmax or max(mf.xo.value)
 
     if box:
-      self.box( (self._fitcount, text, mf.xo, mf.yo) )
+      self.box( (self._fitcount, text, mf.xo, mf.yo, bpos, balign) )
     x = Quantity(np.linspace(xmin, xmax, 200), unit=mf.xo.uvec)
     p0 = [Quantity(p.value, 0, p.uvec) for p in mf.parameters]
     self.line(x, mf.func(x, *p0), fmt='-'+Plot.fitcolors[(self._fitcount-1)%6])
@@ -515,10 +515,16 @@ class Plot:
       va = ['top', 'bottom' ][i%2]
       return xy, dict(horizontalalignment='left', verticalalignment=va)
 
-    for b, i in zip(self._boxes, range(len(self._boxes))):
-      xy, align = pos(i)
+    i = 0
+    for b in self._boxes:
       if isinstance(b, tuple):
-        fitnum, b, x, y = b
+        fitnum, b, x, y, bpos, balign = b
+        
+      xy, align = pos(i)
+      if bpos: xy = bpos
+      else: i += 1
+      if balign: align = balign 
+
 
       if self._fitcount > 1:
         b = '({}) {}'.format(fitnum, b)
