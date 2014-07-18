@@ -731,7 +731,8 @@ class ModelFit(object):
     text += '-'*80 + '\n'
     return text
 
-class PolynomFit(ModelFit):
+
+class PolynomialFit(ModelFit):
   def __init__(self, *coef, y='#y = '):
     eq = []
     for i in range(len(coef)):
@@ -761,20 +762,26 @@ class PolynomFit(ModelFit):
 
   def estimate(self, x, y, xrange=None):
     x, y = self.xtrim(x, y, xrange)
-    for p in self.parameters: p.value = 0
 
-    #m = (max(y.value) - min(y.value)) / (max(x.value) - min(x.value))
-    #c = min(y.value) - m * min(x.value)
-    m = (y.value[-1] - y.value[0]) / (x.value[-1] - x.value[0])
-    c = y.value[0] - m * x.value[0]
+    m = (y.value.max() - y.value.min()) / (x.value.max() - x.value.min())
+    c = y.value.min() - m * x.value.min()
+    #m = (y.value[-1] - y.value[0]) / (x.value[-1] - x.value[0])
+    #c = y.value[0] - m * x.value[0]
 
     self.parameters[0].value = c
     self.parameters[1].value = m
+
+    if len(self.parameters) > 2:
+      for p in self.parameters[2:]:
+        if p.value == 0: p.value = 0.1
+        else: print('value of', p.str(), 'not changed')
 
     self.xo = x
     self.yo = y
 
     return self
+
+PolynomFit = PolynomialFit
 
 """class GaussCFit(ModelFit):
   
@@ -1069,6 +1076,7 @@ class Gauge(data.Storable):
     
     self.f = PolynomFit(*self.p)
     self.f.fit(x, y)
+    
   def plot(self):
     p = Plot()
     p.error(self.x, self.y)
