@@ -48,9 +48,9 @@ DO_NOT_SCALE = False
 SCALE_HOOD = '--this should always fail when parsed-- 04'
 AUTO = '--this should always fail when parsed-- 05'
 
-def Q(unit, latex, label='', symbol=''):
+def Q(unit, label='', latex='', symbol=''):
   """
-  mesmerizing: u-lax la-s
+  mesmerizing: u-lab lax-s
   """
   return Quantity(unit=unit, latex=latex, label=label, symbol=symbol)
 
@@ -340,7 +340,7 @@ class Quantity(Storable):
 
     return Quantity(unit=unit).name(symbol, label, latex)
 
-  def name(self, symbol=None, label=None, latex=None):
+  def name(self, label=None, latex=None, symbol=None):
     """
     Add a symbol, label and/or latex to a Quantity object. Only the given
     string will be overwritten, this means name() makes nothing.
@@ -2067,5 +2067,27 @@ Barn              = Quantity.addUnit('Barn', 'barn', 1e-28 * Meter**2)
 PlanckConstant    = Quantity.addUnit('PlanckConstant', 'h', sc.h * Joule * Second)
 DiracConstant     = Quantity.addUnit('DiracConstant', 'hbar', sc.hbar * Joule * Second)
 SpeedOfLight      = Quantity.addUnit('SpeedOfLight', 'c', sc.c * Meter / Second)
-#Barn              = Quantity.addUnit('Barn', 'b', 10e-14 * (Centi * Meter)**2)
 Fermi             = Quantity.addUnit('Fermi', 'fermi', Femto * Meter)
+
+
+# Function with genrate a new quantity. This will save several
+# keystrokes ;)
+def Length(*nameing):        return Q('m', *nameing)
+def Time(*nameing):          return Q('s', *nameing)
+def Temperature(*nameing):   return Q('K', *nameing)
+def Velocity(*nameing):      return Q('m/s', *nameing)
+def Area(*nameing):          return Q('m^2', *nameing)
+def Volume(*nameing):        return Q('m^3', *nameing)
+def Pressure(*nameing):      return Q('N / m^2', *nameing)
+def Density(*nameing):       return Q('kg / m^3', *nameing)
+def Acceleration(*nameing):  return Q('m / s^2m', *nameing)
+def Energy(*nameing):        return Q('J', *nameing)
+def Voltage(*nameing):       return Q('V', *nameing)
+def Current(*nameing):       return Q('A', *nameing)
+def Power(*nameing):         return Q('W', *nameing)
+def Resistance(*nameing):    return Q('Ohm', *nameing)
+def Inductivity(*nameing):   return Q('Henry', *nameing)
+def Charge(*nameing):        return Q('C', *nameing)
+def Capacity(*nameing):      return Q('Farad', *nameing)
+def Force(*nameing):         return Q('N', *nameing)
+def Rate(*nameing):          return Q('Hz', *nameing)
