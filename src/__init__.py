@@ -1,17 +1,9 @@
 #!/usr/bin/python3
 ################################################################################
 #
-# esel's physics library 
+# esel's physics library
 #
-# Copyright (C) 2013, Frank Sauerburger
-#   published under MIT license (see below)
-#
-################################################################################
-# 
-# Description: to be written
-#
-################################################################################
-# MIT License
+# Copyright (C) 2013-2014, Frank Sauerburger
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -32,6 +24,6 @@
 # THE SOFTWARE.
 ################################################################################
 
-from ephys.data import *
-from ephys.analysis import *
-from ephys.texport import *
+from .data import *
+from .analysis import *
+from .texport import *
