@@ -4,7 +4,7 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <meta name="generator" content="Docutils 0.11: http://docutils.sourceforge.net/" />
-<title>ephys Tutorial</title>
+<title>ephys</title>
 <style type="text/css">
 
 /*
@@ -338,10 +338,51 @@ ul.auto-toc {
 </style>
 </head>
 <body>
-<div class="document" id="ephys-tutorial">
-<h1 class="title">ephys Tutorial</h1>
+<div class="document" id="ephys">
+<h1 class="title">ephys</h1>
 
-<p>Quantity Objects</p>
+<p>Note: This project is still unfinished, not well tested, and especially not well
+documented. Probably there are also thousands of typos and grammatical errors to
+be spotted.</p>
+<p>esel's physics library. A Python module with useful code for doing physics. The
+functionality especially covers the requirements of the physical
+'Fortgeschrittenen Praktikum' at the University of Freiburg.</p>
+<div class="section" id="installation">
+<h1>Installation</h1>
+<p>Run the following lines in this directory to install this program.</p>
+<pre class="code bash literal-block">
+sudo make install
+</pre>
+<p>You might have to install some python packages (or even python) by yourself. The
+following command is supposed to install all required  packages on Ubuntu 14.</p>
+<pre class="code bash literal-block">
+sudo apt-get install python python-scipy python-matplotlib easy_install <span class="literal string escape">\
+</span>  python-setuptools ipython python3 python3-scipy python3-matplotlib <span class="literal string escape">\
+</span>  easy_install3 python3-setuptools ipython
+</pre>
+<p>This installs scipy (including numpy), matplotlib, easy_install, setup-tools and
+ipython (a very handy interactive version of python) for python 2 and 3 for
+compatibility reasons although ephys only supports python 3.</p>
+</div>
+<div class="section" id="documentation">
+<h1>Documentation</h1>
+<p>The full documentation of all functions and features is supposed to be in the
+code. I hope I can will provide a full reference based on the doc strings some
+time in the future. Until then use</p>
+<pre class="code bash literal-block">
+pydoc3 ephys.MODULE
+</pre>
+<p>to get a quick reference. For example</p>
+<pre class="code bash literal-block">
+pydoc3 ephys.data.Quantity
+</pre>
+<p>prints the class reference of the Quantity class.</p>
+</div>
+<div class="section" id="tutorial">
+<h1>Tutorial</h1>
+<p>The directory tut/ holds some example data, example scripts and a pdf
+document, which should introduce the most common functionalities of ephys.</p>
+</div>
 </div>
 </body>
 </html>

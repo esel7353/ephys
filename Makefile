@@ -29,7 +29,7 @@ pdf: $(addsuffix .pdf, $(DOCS))
 	rst2pdf $<
 
 %.html: %.rst
-	rst2html $< > %.html
+	rst2html $< > $@
 
 clean:
 	rm -rf dist/ build/ *.egg-info/ setup.py *.pdf

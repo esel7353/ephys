@@ -19,6 +19,19 @@ Run the following lines in this directory to install this program.
 
   sudo make install
 
+You might have to install some python packages (or even python) by yourself. The
+following command is supposed to install all required  packages on Ubuntu 14.
+
+.. code:: bash
+
+  sudo apt-get install python python-scipy python-matplotlib easy_install \
+    python-setuptools ipython python3 python3-scipy python3-matplotlib \
+    easy_install3 python3-setuptools ipython
+
+This installs scipy (including numpy), matplotlib, easy_install, setup-tools and
+ipython (a very handy interactive version of python) for python 2 and 3 for
+compatibility reasons although ephys only supports python 3.
+
 Documentation
 ================================================================================
 
