@@ -1,15 +1,7 @@
 #!/usr/bin/python3
 ################################################################################
 #
-# Copyright (C) 2013, Frank Sauerburger
-#   published under MIT license (see below)
-#
-################################################################################
-#
-#  Real Experimental Data Representation
-#
-################################################################################
-# MIT License
+# Copyright (C) 2013-2014, Frank Sauerburger
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -48,9 +40,37 @@ DO_NOT_SCALE = False
 SCALE_HOOD = '--this should always fail when parsed-- 04'
 AUTO = '--this should always fail when parsed-- 05'
 
-def Q(unit, latex, label='', symbol=''):
+def q(unit, label='', latex='', symbol=''):
   """
-  mesmerizing: u-lax la-s
+  Shortcut for generating Quantity objects.
+
+  This function is supposed to help everyone who is annoyed generating
+  Quantity objects. This function should speed up the process of typing new
+  Quantity objects. For example the very short command
+  >>> q('m')
+  Quantity(1, 0.0, 'm')
+
+  generates a new length object. Also named object with values can be
+  generated with this function as the following example illustrates.
+  >>> q('42+-1 m', 'The Answer', 'A')
+  Quantity(1, 0.0, 'm', label='The Answer', latex='A')
+
+  Enjoy and save numerous keystrokes :)
+
+  Parameter:
+    unit      A unit string which must be parsable by
+              Quantity._parseUnitString. This can contain values and error as
+              shown in the example above. Mandatory!
+
+    label     The label of the newly generated object. Default: None
+    latex     The latex representation of the generating object. Default: None
+    symbol    The symbol return of the newly generated object. Default: None
+
+  Return:
+    Returns a new Quantity object.
+
+  See also:
+    Length(), Time(), Temperature(), Force(), Energy(), ...
   """
   return Quantity(unit=unit, latex=latex, label=label, symbol=symbol)
 
@@ -58,41 +78,136 @@ def Q(unit, latex, label='', symbol=''):
 # Classes
 
 class Storable(object):
-  storage = None
+
+  """
+  Interface for object which should be storage in a ephys.db file.
+
+  The class works as an interface, which defines the functions, to store and
+  restore objects in a shelve archive. Every class extending this class inherits
+  the functions, such as Quantity. Therefore Quantity objects can be easily
+  stored in 'ephys.db' and restored as the following example illustrates.
+  >>> distance = Quantity('7 m')  # creating new objects
+  >>> distance.store('Distance')  # storing object with an identifier
+  ...
+  >>> restoredDistance = Quantity.restore('Distance')
+  """
+
+  storage = None  # holding the shelve handler
+                  # (note: this is located in the class)
+
+  # TODO:
+  # write function which ensures Storage.storage existence to reduce code
+  # duplicity
 
   def restore(id):
-    if not Storable.storage:
-      Storable.storage = shelve.open('ephys.db')
+    """
+    Restores an object from the shelve archive ephys.db file.
 
+
+    Restores an object from the shelve archive ephys.db file. Note: this
+    function is located in the class! All objects are stored in a dictionary, so
+    an identifier (string) denotes which objects should be read. An example
+    calls therefore is
+    >>> Quantity.restore('Distance')
+    Quantity(7, 0.0, 'm')
+    
+    Parameter:
+      id    the identifier (string) with which the objected was stored
+
+    Return:
+      the restored object
+    """
+    # create shelve handle if non existent
+    if not Storable.storage: 
+      Storable.storage = shelve.open('ephys.db')
     return Storable.storage[id]
 
   def store(self, id): 
+    """
+    Saves an object in the local shelve archie ephys.db.
+
+    Saves an object in the local shelve archie ephys.db. Note: this function is
+    located in the object!  The objects are stored in the file ephys.db which is
+    an shelve archive. So the data is stored in a dictionary, and the object to
+    store must be saved with an identifier. An example calls therefore is
+    >>> distance = Quantity('7 m')  # creating new objects
+    >>> distance.store('Distance')  # storing object with an identifier
+
+    Parameter:
+      id    the identifier (string) with which the objected was stored
+    """
+    # create shelve handle if non existent
     if not Storable.storage:
       Storable.storage = shelve.open('ephys.db')
-
     Storable.storage[id] = self
 
   def dir():
+    """
+    Print a list of all stored objects.
+
+    Print a list of all stored objects. This function prints the key-repr pairs
+    of all stored objects. If the raw data is needed (not printed output), you
+    can access Storable.storage directly.
+
+    See also:
+      there might a console command 'ephysdir' which does calls this function
+      form the command line.
+    """
+    # create shelve handle if non existent
     if not Storable.storage: 
       Storable.storage = shelve.open('ephys.db')
-
     for key in Storable.storage:
       print('{:16}->  {}'.format(key, repr(Storable.storage[key])))
   
 
-class IncompatibleUnits(TypeError): pass
+class IncompatibleUnits(TypeError): 
+  """
+  Error class raised when two different units are summed, subtracted, ... .
+
+  Error class, which is raised when ephys (in most cases the Quantity class)
+  was instructed to perform an mathematical operation which is not possible with
+  the units of the two operands. A very simple example is the summation of two
+  Quantity objects with different units:
+  >>> Quantity('m') + Quantity('s')
+
+  This class has no body (just a pass statement). Its functionality is
+  inherited form TypeError.
+  """
+  pass
 
 class ParticipantsAreNotIndependend(Exception): 
+
+  """
+  Error class to ensure the independence when propagating errors.
+
+  This error class is raised when two non-zero errors are supposed to be
+  propagated. This is only valid, if the errors are statistically independent.
+  This exception should remind the user to ensure the independent! To silence
+  this exception, run
+  >>> Quantity.yesIKnowTheDangersAndPromiseToBeCareful()
+
+  once every session.
+  """
+  
   def __str__(self):
     return """You instructed the Quantity class to perform a propagation of
-    errors. This can only be done there when then the two errors are
-    statistically independent. This exception is to remind you to be careful
-    that all errors are independent. To silence this exception call
-    'Quantity.yesIKnowTheDangersAndPromiseToBeCareful()' once every
-    session."""
+    errors. This can only be done when the two errors are statistically
+    independent.
+    
+    This exception is to remind you to be careful, trhat all errors are
+    independent.
+    
+    To silence this exception,  call:
+    >>> Quantity.yesIKnowTheDangersAndPromiseToBeCareful()
+
+    once every session.
+    """
 
 class Quantity(Storable):
+
   """
+  Class representing real data with value, standard deviation and unit.
+
   This class is to represent real experimental data. This means a value,
   its standard deviation and a unit can be stored together. Due to excessive
   operator overloading it is easy to make physical calculations which also
@@ -100,9 +215,9 @@ class Quantity(Storable):
   propagate the unit.
   >>> x = Quantity(4, 0.1, Meter)
   >>> print(x)
-  4 +- 0.1 m
+  (4.00 +- 0.10) m
   >>> print(x * 2)
-  8 +- 0.2 m
+  (8.0 +- 0.2) m
 
   The units are represented as products of powers of the SI base
   units. Internally the exponents are stored as vectors. This guarantees the
@@ -340,7 +455,7 @@ class Quantity(Storable):
 
     return Quantity(unit=unit).name(symbol, label, latex)
 
-  def name(self, symbol=None, label=None, latex=None):
+  def name(self, label=None, latex=None, symbol=None):
     """
     Add a symbol, label and/or latex to a Quantity object. Only the given
     string will be overwritten, this means name() makes nothing.
@@ -2067,5 +2182,27 @@ Barn              = Quantity.addUnit('Barn', 'barn', 1e-28 * Meter**2)
 PlanckConstant    = Quantity.addUnit('PlanckConstant', 'h', sc.h * Joule * Second)
 DiracConstant     = Quantity.addUnit('DiracConstant', 'hbar', sc.hbar * Joule * Second)
 SpeedOfLight      = Quantity.addUnit('SpeedOfLight', 'c', sc.c * Meter / Second)
-#Barn              = Quantity.addUnit('Barn', 'b', 10e-14 * (Centi * Meter)**2)
 Fermi             = Quantity.addUnit('Fermi', 'fermi', Femto * Meter)
+
+
+# Function with genrate a new quantity. This will save several
+# keystrokes ;)
+def Length(*nameing):        return Q('m', *nameing)
+def Time(*nameing):          return Q('s', *nameing)
+def Temperature(*nameing):   return Q('K', *nameing)
+def Velocity(*nameing):      return Q('m/s', *nameing)
+def Area(*nameing):          return Q('m^2', *nameing)
+def Volume(*nameing):        return Q('m^3', *nameing)
+def Pressure(*nameing):      return Q('N / m^2', *nameing)
+def Density(*nameing):       return Q('kg / m^3', *nameing)
+def Acceleration(*nameing):  return Q('m / s^2m', *nameing)
+def Energy(*nameing):        return Q('J', *nameing)
+def Voltage(*nameing):       return Q('V', *nameing)
+def Current(*nameing):       return Q('A', *nameing)
+def Power(*nameing):         return Q('W', *nameing)
+def Resistance(*nameing):    return Q('Ohm', *nameing)
+def Inductivity(*nameing):   return Q('Henry', *nameing)
+def Charge(*nameing):        return Q('C', *nameing)
+def Capacity(*nameing):      return Q('Farad', *nameing)
+def Force(*nameing):         return Q('N', *nameing)
+def Rate(*nameing):          return Q('Hz', *nameing)
