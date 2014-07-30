@@ -1,15 +1,7 @@
 #!/usr/bin/python3
 ################################################################################
 #
-# Copyright (C) 2013, Frank Sauerburger
-#   published under MIT license (see below)
-#
-################################################################################
-#
-#  Experimental Data Analysis Tool
-#
-################################################################################
-# MIT License
+# Copyright (C) 2013-2014, Frank Sauerburger
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -38,6 +30,7 @@ from scipy.special import wofz
 import collections
 import warnings
 import pylab
+import matplotlib.pyplot as plt
 import shelve
 import re
 import sys
@@ -398,7 +391,7 @@ class Plot:
 
   fitcolors = 'brgcmy'
 
-  def fit(self, mf, box=True, bpos=None, balign=None, xmin=None, xmax=None, chi2=True):
+  def fit(self, mf, box=True, bpos=None, xmin=None, xmax=None, chi2=True):
     if not isinstance(mf, ModelFit):
       raise TypeError("Argument of Plot.fit must be a ModelFit, but {} given.".format(type(mf)))
 
@@ -415,7 +408,7 @@ class Plot:
     xmax = xmax or max(mf.xo.value)
 
     if box:
-      self.box( (self._fitcount, text, mf.xo, mf.yo, bpos, balign) )
+      self.box( (self._fitcount, text, mf.xo, mf.yo, bpos) )
     x = Quantity(np.linspace(xmin, xmax, 200), unit=mf.xo.uvec)
     p0 = [Quantity(p.value, 0, p.uvec) for p in mf.parameters]
     self.line(x, mf.func(x, *p0), fmt='-'+Plot.fitcolors[(self._fitcount-1)%6])
@@ -439,19 +432,22 @@ class Plot:
 
   def save(self, filename, **kwds):
     if not self._made: self.make()
-    # dpi not set anymore
-    # do this in a matlibplotrc file:
-    #  figure.dpi     : 72 
-    pylab.savefig(filename, dpi=dpi, pad_inches=0.4, bbox_inches='tight', **kwds)
+    # dpi not set here anymore
+    # do this in a matlibplotrc file, e.g.
+    #  figure.dpi     : 300 
+    plt.tight_layout()
+    plt.savefig(filename, **kwds)
     return self
     
   def show(self):
     if not self._made: self.make()
-    pylab.show()
+    plt.show()
     return self
 
-  def make(self, clf=True):
-    if clf: pylab.clf()
+  def make(self, clf=True, fig=None, axes=None):
+    if clf: plt.clf()
+    if fig is None and axes is None: fig = plt.figure()
+    if axes is None: axes = fig.add_subplot(111)
 
     xlim = None
     ylim = None
@@ -496,9 +492,9 @@ class Plot:
       yerr = sy
 
       if errorbar:
-        pylab.errorbar(x, y, sy, sx, fmt=fmt, **d)
+        axes.errorbar(x, y, sy, sx, fmt=fmt, **d)
       else:
-        pylab.plot(x, y, fmt, **d)
+        axes.plot(x, y, fmt, **d)
 
     xdif = xlim[1] - xlim[0]
     ydif = ylim[1] - ylim[0]
@@ -507,27 +503,39 @@ class Plot:
     ylim[0] -= ydif * self._enlarge[2]
     ylim[1] += ydif * self._enlarge[3]
 
-    pylab.xlim(*xlim)
-    pylab.ylim(*ylim)
-
-    def pos(i):
-      #xy = (0.98+i//3 * 0.2 , 0.9-i%3 * 0.4)
-      #xy = (0.93+i//3 * 0.3 , 0.9-i%3 * 0.3)
-      #xy = (0.93+i//2 * 0.4 , 0.9-i%2 * 0.4)
-      #va = 'top' #['top', 'center', 'bottom' ][i%3]
-      xy = (0.93+i//2 * 0.4 , [0.9, 0.1][i%2])
-      va = ['top', 'bottom' ][i%2]
-      return xy, dict(horizontalalignment='left', verticalalignment=va)
+    axes.set_xlim(*xlim)
+    axes.set_ylim(*ylim)
 
     i = 0
+    taken = [ [0]*2, [0]*2, [0]*2 ]
     for b in self._boxes:
       if isinstance(b, tuple):
-        fitnum, b, x, y, bpos, balign = b
+        fitnum, b, x, y, bpos = b
         
-      xy, align = pos(i)
-      if bpos: xy = bpos
-      else: i += 1
-      if balign: align = balign 
+      if isinstance(bpos, tuple): 
+        x = bpos[0] / 3
+        y = bpos[1] / 2
+      else:
+        penalty = []
+        for x in range(3):
+          for y in range(2):
+            points = 0 
+            total = 0
+            for dx, dy, fmt, errorbar, d in self._data:
+              idx = (dx.value > xlim[0] + xdif * x/3)
+              idx *= (dx.value < xlim[0] + xdif * (x+1) / 3)
+              idx *= (dy.value > ylim[0] + ydif * y/3)
+              idx *= (dy.value < ylim[0] + ydif * (y+1) / 3)
+              points += len(dx.value[idx]) / len(dx.value)
+              total = len(dx.value)
+            points += total * taken[x][y]
+            penalty.append( (x, y, points) )
+        x, y, points = min(penalty, key=lambda y: y[2])
+        taken[x][y] += 1
+
+      x = xlim[0] + xdif * x / 3
+      y = ylim[0] + ydif * (y / 2 + 0.05 * y)
+      print(x, y)
 
 
       if self._fitcount > 1:
@@ -546,20 +554,21 @@ class Plot:
         ty = max(ty)
         ty += 0.05 * ydif
 
-        pylab.text(tx, ty, '({})'.format(fitnum), color=Plot.fitcolors[(fitnum-1)%6], horizontalalignment='center', verticalalignment='bottom')
+        axes.text(tx, ty, '({})'.format(fitnum), color=Plot.fitcolors[(fitnum-1)%6], horizontalalignment='center', verticalalignment='bottom')
 
 
-      pylab.figtext(*xy, s=b,bbox=dict(facecolor='w', edgecolor='black',
-      pad=10), multialignment='left', **align)
+      #plt.figtext(*xy, s=b,bbox=dict(facecolor='w', edgecolor='black', pad=10), multialignment='left', **align)
+      axes.annotate(b, xy=(x, y), bbox=dict(facecolor='w', edgecolor='black',
+      pad=10), multialignment='left') #, **align)
 
 
     if self._grid: pylab.grid()
-    pylab.xscale(self._xscale)
-    pylab.yscale(self._yscale)
+    axes.set_xscale(self._xscale)
+    axes.set_yscale(self._yscale)
     if self._leg: pylab.legend()
 
-    if self.makex(): pylab.xlabel(self.makex())
-    if self.makey(): pylab.ylabel(self.makey())
+    if self.makex(): axes.set_xlabel(self.makex())
+    if self.makey(): axes.set_ylabel(self.makey())
 
     self._made = True
     return self # cascade
