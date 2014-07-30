@@ -522,10 +522,13 @@ class Plot:
             points = 0 
             total = 0
             for dx, dy, fmt, errorbar, d in self._data:
-              idx = (dx.value > xlim[0] + xdif * x/3)
-              idx *= (dx.value < xlim[0] + xdif * (x+1) / 3)
-              idx *= (dy.value > ylim[0] + ydif * y/3)
-              idx *= (dy.value < ylim[0] + ydif * (y+1) / 3)
+              fx = float(Quantity(unit=dx.uvec) / self._xaxis)
+              fy = float(Quantity(unit=dy.uvec) / self._yaxis)
+              idx1 = (dx.value * fx > (xlim[0] + xdif * x/3))
+              idx2 = (dx.value * fx < (xlim[0] + xdif * (x+1) / 3))
+              idx3 = (dy.value * fy > (ylim[0] + ydif * y/3))
+              idx4 = (dy.value * fy < (ylim[0] + ydif * (y+1) / 3))
+              idx = idx1 * idx2 * idx3 * idx4
               points += len(dx.value[idx]) / len(dx.value)
               total = len(dx.value)
             points += total * taken[x][y]
@@ -535,7 +538,6 @@ class Plot:
 
       x = xlim[0] + xdif * x / 3
       y = ylim[0] + ydif * (y / 2 + 0.05 * y)
-      print(x, y)
 
 
       if self._fitcount > 1:
