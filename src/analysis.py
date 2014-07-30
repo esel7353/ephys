@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 ################################################################################
-#
 # Copyright (C) 2013-2014, Frank Sauerburger
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -524,10 +523,10 @@ class Plot:
             for dx, dy, fmt, errorbar, d in self._data:
               fx = float(Quantity(unit=dx.uvec) / self._xaxis)
               fy = float(Quantity(unit=dy.uvec) / self._yaxis)
-              idx1 = (dx.value * fx > (xlim[0] + xdif * x/3))
-              idx2 = (dx.value * fx < (xlim[0] + xdif * (x+1) / 3))
-              idx3 = (dy.value * fy > (ylim[0] + ydif * y/3))
-              idx4 = (dy.value * fy < (ylim[0] + ydif * (y+1) / 3))
+              idx1 = (dx.value * fx > (xlim[0] + xdif * (x/3 - 0.1)))
+              idx2 = (dx.value * fx < (xlim[0] + xdif * (x+1.3) / 3))
+              idx3 = (dy.value * fy > (ylim[0] + ydif * (y/3 - 0.1)))
+              idx4 = (dy.value * fy < (ylim[0] + ydif * (y+1.3) / 3))
               idx = idx1 * idx2 * idx3 * idx4
               points += len(dx.value[idx]) / len(dx.value)
               total = len(dx.value)
@@ -536,9 +535,24 @@ class Plot:
         x, y, points = min(penalty, key=lambda y: y[2])
         taken[x][y] += 1
 
-      x = xlim[0] + xdif * x / 3
-      y = ylim[0] + ydif * (y / 2 + 0.05 * y)
+      if y == 0:
+        y = ylim[0]
+        yalign = 'bottom'
+      elif y == 1:
+        y = ylim[1]
+        yalign = 'top'
 
+      if x == 0:
+        x = xlim[0]
+        xalign = 'left'
+      elif x == 1:
+        x = xlim[0] + 0.5 * xdif
+        xalign = 'center'
+      elif x == 2:
+        x = xlim[1]
+        xalign = 'right'
+
+      print(x, y)
 
       if self._fitcount > 1:
         b = '({}) {}'.format(fitnum, b)
@@ -560,8 +574,7 @@ class Plot:
 
 
       #plt.figtext(*xy, s=b,bbox=dict(facecolor='w', edgecolor='black', pad=10), multialignment='left', **align)
-      axes.annotate(b, xy=(x, y), bbox=dict(facecolor='w', edgecolor='black',
-      pad=10), multialignment='left') #, **align)
+      axes.annotate(b, xy=(x, y), bbox=dict(facecolor='w', edgecolor='w', pad=0), multialignment='left', horizontalalignment=xalign, verticalalignment=yalign)
 
 
     if self._grid: pylab.grid()
