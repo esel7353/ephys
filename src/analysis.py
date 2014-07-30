@@ -437,8 +437,11 @@ class Plot:
     self._yscale = 'log' if log else 'linear'
     return self
 
-  def save(self, filename, dpi=100, **kwds):
+  def save(self, filename, **kwds):
     if not self._made: self.make()
+    # dpi not set anymore
+    # do this in a matlibplotrc file:
+    #  figure.dpi     : 72 
     pylab.savefig(filename, dpi=dpi, pad_inches=0.4, bbox_inches='tight', **kwds)
     return self
     
