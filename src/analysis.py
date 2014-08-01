@@ -385,7 +385,38 @@ class Plot:
     self._made = False
     self.data(x, y, fmt=fmt, linewidth=linewidth, label=label, errorbar=False, **kwds)
     return self # cascade
+
+  def histoline(self, x, y, *args, **kwds):
+    l = len(x)
+
+    doubledX = np.zeros(2*l)
+    doubledY = np.zeros(2*l)
+    for i in range(0, l):
+      doubledY[2*i]   = y.value[i]
+      doubledY[2*i+1] = y.value[i]
+
+    deltaX = x.value[1] - x.value[0]
+    print(x.value)
+    doubledX[0] = x.value[0] - deltaX / 2
+    for i in range(0, l-1):
+      doubledX[2*i+1]   = (x.value[i] + x.value[i+1]) / 2
+      doubledX[2*i+2] = (x.value[i] + x.value[i+1]) / 2
+    deltaX = x.value[-1] - x.value[-2]
+    doubledX[-1] = x.value[-1] + deltaX / 2
+
+
+
+    doubledX = [doubledX[0]] + list(doubledX) + [doubledX[-1]]
+    doubledY = [0] + list(doubledY) + [0]
+
+    nx = Quantity(doubledX, 0, x.uvec)
+    nx.name(x.label, x.symbol, x.latex)
+    nx.preferredUnit = x.preferredUnit
+    ny = Quantity(doubledY, 0, y.uvec)
+    ny.name(y.label,y.symbol,y.latex)
+    ny.preferredUnit = y.preferredUnit
     
+    return self.line(nx, ny, *args, **kwds)
 
 
   fitcolors = 'brgcmy'
