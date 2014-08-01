@@ -371,7 +371,7 @@ class Plot:
         self.yaxis(y)
     return self
 
-  def error(self, x, y, fmt='.k', markersize=3, label=True, ecolor='0.3', **kwds):
+  def error(self, x, y, fmt='.k', markersize=5, capsize=0, label=True, ecolor='0.3', **kwds):
     self._made = False
     self.data(x, y, fmt=fmt, markersize=markersize, label=label, ecolor=ecolor, errorbar=True, **kwds)
     return self # cascade
