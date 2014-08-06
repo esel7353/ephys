@@ -518,6 +518,9 @@ class Plot:
       ylim[0] = min(ylim[0], ymin)
       ylim[1] = max(ylim[1], ymax)
 
+      xlimraw = xlim
+      ylimraw = ylim
+
       xerr = sx
       yerr = sy
 
@@ -567,18 +570,21 @@ class Plot:
         taken[x][y] += 1
 
       if y == 0:
-        yalign = 'top'
-      elif y == 1:
         yalign = 'bottom'
-      y = ylim[0] + ydif * 0.5
+        y = ylimraw[0] + ydif * 0.05
+      elif y == 1:
+        yalign = 'top'
+        y = ylimraw[1] - ydif * 0.05
 
       if x == 0:
-        xalign = 'right'
+        xalign = 'left'
+        x = xlimraw[0] + xdif * 0.05
       elif x == 1:
         xalign = 'center'
+        x = xlimraw[0] + 0.5 * xdif
       elif x == 2:
-        xalign = 'left'
-      x = xlim[0] + 0.5 * xdif
+        xalign = 'right'
+        x = xlimraw[1] - xdif * 0.05
 
 
       if self._fitcount > 1:
