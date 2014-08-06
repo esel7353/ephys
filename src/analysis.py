@@ -397,7 +397,6 @@ class Plot:
       doubledY[2*i+1] = y.value[i]
 
     deltaX = x.value[1] - x.value[0]
-    print(x.value)
     doubledX[0] = x.value[0] - deltaX / 2
     for i in range(0, l-1):
       doubledX[2*i+1]   = (x.value[i] + x.value[i+1]) / 2
@@ -581,7 +580,6 @@ class Plot:
         xalign = 'left'
       x = xlim[0] + 0.5 * xdif
 
-      print(x, y)
 
       if self._fitcount > 1:
         b = '({}) {}'.format(fitnum, b)
