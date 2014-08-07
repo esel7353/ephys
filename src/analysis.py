@@ -402,9 +402,7 @@ class Plot:
       doubledX[2*i+1]   = (x.value[i] + x.value[i+1]) / 2
       doubledX[2*i+2] = (x.value[i] + x.value[i+1]) / 2
     deltaX = x.value[-1] - x.value[-2]
-    doubledX[-1] = x.value[-1] + deltaX / 2
-
-
+    doubledX[-1] = x.value[-1] + deltaX / 2 
 
     doubledX = [doubledX[0]] + list(doubledX) + [doubledX[-1]]
     doubledY = [0] + list(doubledY) + [0]
@@ -432,7 +430,7 @@ class Plot:
     for p in mf.parameters:
       text += '  ${}$\n'.format(p.tex())
     if chi2:
-      text += '  $\chi^2/\mathrm{ndf} = ' +('{:.2f}$'.format(mf.chi))
+      text += '  $\chi^2/\mathrm{ndf} = ' +('{:.2f} / {}$'.format(*mf.chi))
 
     xmin = xmin or min(mf.xo.value)
     xmax = xmax or max(mf.xo.value)
@@ -647,7 +645,7 @@ class ModelFit(object):
     self.model = odr.Model(lambda p, x: self.func(x, *p))
     self.modeq = modeq
     self.sr = -1
-    self.chi = -1
+    chi = (-1, '?')
     self.xo = None
     self.yo = None
 
@@ -726,16 +724,13 @@ class ModelFit(object):
     stopreason = result.info
     if stopreason > 3:  # on error
       warnings.warn('ODR fit did fail! ' + str(stopreason))
-      chi = -1
+      chi = (-1, '?')
     else:
       for p, b, sb in zip(self.parameters, result.beta, result.sd_beta):
         p.value    = b
         p.variance = sb**2
       ndf = len(sx) - len(result.beta)
-      if ndf == 0:
-        chi = 0
-      else:
-        chi = result.sum_square/ndf
+      chi = (result.sum_square, ndf)
 
     
     self.cov = result.cov_beta
