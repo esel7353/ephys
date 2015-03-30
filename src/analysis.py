@@ -534,8 +534,6 @@ class Plot:
     ylim[0] -= ydif * self._enlarge[2]
     ylim[1] += ydif * self._enlarge[3]
 
-    axes.set_xlim(*xlim)
-    axes.set_ylim(*ylim)
 
     i = 0
     taken = [ [0]*2, [0]*2, [0]*2 ]
@@ -617,6 +615,8 @@ class Plot:
     if self.makey(): axes.set_ylabel(self.makey())
 
     self._made = True
+    axes.set_xlim(*xlimraw)
+    axes.set_ylim(*ylimraw)
     return self # cascade
 
 
