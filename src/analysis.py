@@ -583,7 +583,7 @@ class Plot:
         x = xlimraw[1] - xdif * 0.05
 
 
-      if self._fitcount > 1:
+      if self._fitcount > 1 and False:
         b = '({}) {}'.format(fitnum, b)
         fx = Quantity(unit=x.uvec) / self._xaxis
         fy = Quantity(unit=y.uvec) / self._yaxis
